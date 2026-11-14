@@ -90,3 +90,22 @@ test('keeps registry order among providers that share the same level', async () 
 
   expect(ordered.map((c) => c.item.slug)).toEqual(['first', 'second'])
 })
+
+test('never offers the built-in local relay entry or its copies as an upstream', async () => {
+  const legacyLocal = { apiKey: 'built-in', baseUrl: 'http://127.0.0.1:18100', level: 1 }
+  await installProvider('local', { claude: true }, legacyLocal)
+  await installProvider('local-copy', { claude: true }, legacyLocal)
+  await installProvider('real', { claude: true }, { apiKey: 'k1', baseUrl: 'https://one.example', level: 2 })
+
+  const registry: RegistryJson = {
+    installed: [
+      providerEntry('local', { claude: true }),
+      { ...providerEntry('local-copy', { claude: true }), parentSlug: 'local' },
+      providerEntry('real', { claude: true }),
+    ],
+  }
+
+  const ordered = await findOrderedProvidersForTarget(aasHome, registry, 'claude')
+
+  expect(ordered.map((c) => c.item.slug)).toEqual(['real'])
+})
