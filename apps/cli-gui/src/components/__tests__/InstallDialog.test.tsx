@@ -333,7 +333,7 @@ test('a provider that already has a config gets another one', async () => {
   await screen.findByRole('button', { name: '添加配置' })
   await click('添加配置')
   await screen.findByRole('dialog', { name: '已安装 OpenRouter' })
-  expect(rpc('duplicateProvider')).toEqual([{ method: 'duplicateProvider', args: ['openrouter'] }])
+  expect(rpc('duplicateProvider')).toEqual([{ method: 'duplicateProvider', args: ['openrouter', 'OpenRouter 副本'] }])
   expect(installCalls()).toHaveLength(0)
 })
 

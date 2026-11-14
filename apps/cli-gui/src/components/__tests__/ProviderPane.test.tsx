@@ -237,7 +237,7 @@ test('再添加一份配置 duplicates the provider', async () => {
   renderPanel({ duplicateProvider })
   await screen.findByDisplayValue('sk-real')
   fireEvent.click(screen.getByRole('button', { name: /再添加一份配置/ }))
-  await waitFor(() => expect(duplicateProvider).toHaveBeenCalledWith('yls-me'))
+  await waitFor(() => expect(duplicateProvider).toHaveBeenCalledWith('yls-me', '我的配置 副本'))
 })
 
 test('测试连接 shows each agent with its outcome, latency and the upstream reason', async () => {
