@@ -1,6 +1,7 @@
 import { test, expect, afterEach, mock, spyOn } from 'bun:test'
+import type { ReactElement } from 'react'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
-import { ProviderPane } from '../library/ProviderPane'
+import { ProviderPane, toConfigPayload, toEditValues } from '../library/ProviderPane'
 import { useTargetToggle } from '../library/useTargetToggle'
 import * as rpcModule from '../../lib/rpc'
 import { AppStateProvider } from '../../state/AppState'
@@ -8,6 +9,7 @@ import { EntitlementProvider } from '../../state/Entitlement'
 import { TerminalLogProvider } from '../../state/TerminalLog'
 import { TooltipProvider } from '../ui/tooltip'
 import { settleRpc } from '../../test/settle'
+import { I18nProvider } from '../../i18n'
 
 afterEach(async () => { cleanup(); await settleRpc(); mock.restore() })
 
@@ -23,7 +25,7 @@ function Harness({ slug }: { slug: string }) {
   return <ProviderPane slug={slug} toggle={toggle} onClose={() => {}} onUninstall={() => {}} />
 }
 
-function renderWith(slug: string, info: Record<string, unknown>, handlers?: Record<string, (...args: unknown[]) => unknown>) {
+function renderWith(slug: string, info: Record<string, unknown>, handlers?: Record<string, (...args: unknown[]) => unknown>, wrap: (n: ReactElement) => ReactElement = (n) => n) {
   let enabledFor = info.enabledFor as Record<string, boolean>
   mockRpc({
     info: () => ({ ...info, enabledFor }),
@@ -34,15 +36,17 @@ function renderWith(slug: string, info: Record<string, unknown>, handlers?: Reco
     ...handlers,
   })
   return render(
-    <AppStateProvider>
-      <TerminalLogProvider>
-        <EntitlementProvider>
-          <TooltipProvider>
-            <Harness slug={slug} />
-          </TooltipProvider>
-        </EntitlementProvider>
-      </TerminalLogProvider>
-    </AppStateProvider>
+    wrap(
+      <AppStateProvider>
+        <TerminalLogProvider>
+          <EntitlementProvider>
+            <TooltipProvider>
+              <Harness slug={slug} />
+            </TooltipProvider>
+          </EntitlementProvider>
+        </TerminalLogProvider>
+      </AppStateProvider>
+    )
   )
 }
 
@@ -267,4 +271,36 @@ test('a test that cannot run shows why', async () => {
   await screen.findByDisplayValue('sk-real')
   fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
   expect(await screen.findByText('Item not installed: yls-me')).toBeInTheDocument()
+})
+
+test('local: an unsaved local entry carries no placeholder key and no address of its own', () => {
+  const values = toEditValues(undefined, 'local', true)
+  expect(values.apiKey).toBe('')
+  expect(values.baseUrl).toBe('')
+  const payload = toConfigPayload(values)
+  expect(payload.apiKey).not.toBe('built-in')
+  expect(JSON.stringify(payload)).not.toContain('18100')
+})
+
+test('duplicating names the copy with the Chinese suffix in the Chinese UI', async () => {
+  const duplicateProvider = mock((..._args: unknown[]) => ({ newSlug: 'yls-me-copy' }))
+  renderPanel({ duplicateProvider })
+  await screen.findByDisplayValue('sk-real')
+  fireEvent.click(screen.getByRole('button', { name: '再添加一份配置' }))
+  await waitFor(() => expect(duplicateProvider).toHaveBeenCalledTimes(1))
+  expect(duplicateProvider.mock.calls[0]).toEqual(['yls-me', '我的配置 副本'])
+})
+
+test('duplicating names the copy from the English dictionary in the English UI', async () => {
+  localStorage.setItem('as-locale', 'en')
+  try {
+    const duplicateProvider = mock((..._args: unknown[]) => ({ newSlug: 'yls-me-copy' }))
+    renderWith('yls-me', ylsInfo, { duplicateProvider }, (n) => <I18nProvider>{n}</I18nProvider>)
+    await screen.findByDisplayValue('sk-real')
+    fireEvent.click(screen.getByRole('button', { name: 'Add another config' }))
+    await waitFor(() => expect(duplicateProvider).toHaveBeenCalledTimes(1))
+    expect(duplicateProvider.mock.calls[0]).toEqual(['yls-me', '我的配置 copy'])
+  } finally {
+    localStorage.removeItem('as-locale')
+  }
 })

@@ -32,6 +32,7 @@ import { duplicateProviderConnection, readProviderConnection } from './config/pr
 import { claudeUsesRelay } from './config/claude'
 import { codexUsesRelay } from './config/codex'
 import { testProviderConnection } from './relay/provider-test'
+import { isLocalRelayEntry, migrateLocalRelayConfig, normalizeLocalRelayConfig } from './relay/local-entry'
 import { atomicWriteSecretFile } from './config/safe-file'
 import { readMcpTargets } from './config/mcp-targets'
 import { batchError } from './error-fields'
@@ -81,6 +82,8 @@ export interface EngineOptions {
   /** The shared skills directory Codex also reads; ~/.agents/skills by default. */
   agentsSkillsDir?: string
 }
+
+const isLocalRelay = (entry: InstalledItem) => entry.category === 'provider' && isLocalRelayEntry(entry)
 
 /**
  * The shared flow for every kind of item: registry entry (locked, atomic), compatibility,
@@ -297,7 +300,8 @@ export class EngineImpl implements Engine {
     const manifest = await this.adapter(entry.category).readManifest(entry) as { configSchema?: JsonSchema }
     let current: Record<string, unknown> = {}
     try {
-      current = JSON.parse(await readFile(join(dir, 'config.json'), 'utf-8')) as Record<string, unknown>
+      if (isLocalRelay(entry)) current = (await migrateLocalRelayConfig(dir)) ?? {}
+      else current = JSON.parse(await readFile(join(dir, 'config.json'), 'utf-8')) as Record<string, unknown>
     } catch { /* skills have no config.json */ }
     return { schema: manifest.configSchema ?? {}, current }
   }
@@ -314,7 +318,8 @@ export class EngineImpl implements Engine {
       else await atomicWriteSecretFile(configPath, previous)
     }
     const targets = TARGETS.filter(t => entry.enabledFor[t])
-    await atomicWriteSecretFile(configPath, JSON.stringify(values, null, 2))
+    const saved = isLocalRelay(entry) ? normalizeLocalRelayConfig(values) : values
+    await atomicWriteSecretFile(configPath, JSON.stringify(saved, null, 2))
     const synced: ToolTarget[] = []
     try {
       // Check every target before writing any, so one refusing leaves all of them as they were.
@@ -420,7 +425,8 @@ export class EngineImpl implements Engine {
     }
     let currentConfig: Record<string, unknown> | undefined
     try {
-      currentConfig = JSON.parse(await readFile(join(dir, 'config.json'), 'utf-8')) as Record<string, unknown>
+      if (isLocalRelay(entry)) currentConfig = await migrateLocalRelayConfig(dir)
+      else currentConfig = JSON.parse(await readFile(join(dir, 'config.json'), 'utf-8')) as Record<string, unknown>
     } catch { /* skills have no config.json */ }
     let replacedFor: ToolTarget[] | undefined
     if (entry.category === 'mcp') {
@@ -447,7 +453,7 @@ export class EngineImpl implements Engine {
     }
   }
 
-  async duplicateProvider(slug: string): Promise<{ newSlug: string }> {
+  async duplicateProvider(slug: string, name?: string): Promise<{ newSlug: string }> {
     let newSlug = ''
     // Picking the free slug and copying run under the lock so two duplicates can't pick the same one.
     await updateRegistry(this.paths.aasHome, async registry => {
@@ -466,7 +472,7 @@ export class EngineImpl implements Engine {
 
       const sourceDir = itemDir(this.paths.aasHome, 'provider', slug)
       const targetDir = itemDir(this.paths.aasHome, 'provider', newSlug)
-      await duplicateProviderConnection(sourceDir, targetDir, newSlug)
+      await duplicateProviderConnection(sourceDir, targetDir, newSlug, name)
 
       const now = new Date().toISOString()
       return upsertEntry(registry, {

@@ -5,6 +5,7 @@ import { enableRelayForClaude, disableRelayForClaude } from '../config/claude'
 import { enableRelayForCodex, disableRelayForCodex } from '../config/codex'
 import { getRelayDaemonStatus } from '../relay/daemon-status'
 import { readRegistry } from '../registry/index'
+import { isLocalRelayEntry } from '../relay/local-entry'
 import { ItemDirAdapter } from './item-dir'
 import type { AdapterContext } from './types'
 
@@ -30,14 +31,14 @@ export class ProviderAdapter extends ItemDirAdapter {
   }
 
   async blocker(entry: InstalledItem) {
-    if (await this.hasKey(entry.slug)) return undefined
+    if (await this.hasKey(entry)) return undefined
     return { reason: 'no-key' as const, message: `${entry.slug} has no API key configured; run: aas config ${entry.slug}` }
   }
 
   // A key and a running relay must both exist before anything is written.
   async enable(entry: InstalledItem, target: ToolTarget): Promise<void> {
     const slug = entry.slug
-    if (!(await this.hasKey(slug))) {
+    if (!(await this.hasKey(entry))) {
       throw new ProviderNotReadyError(`${slug} has no API key configured; run: aas config ${slug}`, 'no-key')
     }
     await this.ensureRelay()
@@ -67,8 +68,9 @@ export class ProviderAdapter extends ItemDirAdapter {
     else await enableRelayForCodex(aasHome, codexConfigDir)
   }
 
-  private async hasKey(slug: string): Promise<boolean> {
-    const connection = await readProviderConnection(this.dir(slug))
+  private async hasKey(entry: InstalledItem): Promise<boolean> {
+    if (isLocalRelayEntry(entry)) return true
+    const connection = await readProviderConnection(this.dir(entry.slug))
     return Boolean(connection.apiKey || connection.apiKeys?.length)
   }
 

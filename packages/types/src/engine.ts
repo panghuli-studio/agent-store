@@ -394,8 +394,11 @@ export interface Engine {
   update(slug?: string): Promise<UpdateResult[]>
   list(options?: ListOptions): Promise<InstalledItem[]>
   info(slug: string): Promise<ItemDetail>
-  /** Duplicates an installed provider's local config into a new slug. Throws if slug is not an installed provider. */
-  duplicateProvider(slug: string): Promise<{ newSlug: string }>
+  /**
+   * Duplicates an installed provider's local config into a new slug. Throws if slug is not an installed provider.
+   * `name` is the copy's display name, localized by the caller; without it the copy keeps the source's name.
+   */
+  duplicateProvider(slug: string, name?: string): Promise<{ newSlug: string }>
   /** Returns daily usage/cost rollups, optionally filtered by provider or target. */
   getUsageSummary(options?: UsageSummaryOptions): Promise<UsageSummaryRow[]>
   /** Returns the N most recent raw request-log rows, newest first. */
