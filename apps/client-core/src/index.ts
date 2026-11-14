@@ -13,6 +13,8 @@ export type { Catalog, CatalogItem } from './catalog'
 export { SkillDeployRefusedError } from './skills/deploy'
 export { SkillConflictError } from './skills/store'
 export { runDoctor } from './doctor'
+export { detectAgents } from './agents'
+export { ImportCandidateError, ImportUndoConflictError, ImportNotFoundError } from './import/apply'
 export { AccountService, DESKTOP_CLIENT_ID, SessionExpiredError, FavoriteRejectedError, StoreUnavailableError } from './account'
 export type { FavoriteRejection } from './account'
 export { errorFields } from './error-fields'
@@ -26,7 +28,7 @@ export { BackupExportError } from './backup/export'
 export { BackupApplyError } from './backup/apply'
 export { GitError, GitNotFoundError, classifyGitFailure } from './backup/git'
 export type { MigrateResult, MigrateStep } from './migrate'
-export type { DoctorFinding, DoctorPaths } from './doctor'
+export type { DoctorFinding, DoctorPaths, DoctorOptions } from './doctor'
 export type {
   Engine, Paths, InstallResult, SyncResult, UpdateAvailable, UpdateResult,
   ListOptions, InstalledItem, ItemDetail, ToolTarget, SearchOptions, Item, JsonSchema,
