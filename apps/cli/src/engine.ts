@@ -1,5 +1,5 @@
 import { EngineImpl } from '@as/client-core'
-import { ensureRelayRunning } from './commands/relay'
+import { ensureRelayRunning, stopRelay } from './commands/relay'
 import { realRelayOps } from './relay-ops'
 
 // The default must be the public store: the desktop client spawns this CLI as its
@@ -12,5 +12,9 @@ export function createEngine(): EngineImpl {
   // the store's /api/auth/* (the desktop sign-in) lives at AS_AUTH_URL.
   const authUrl = process.env['AS_AUTH_URL'] || undefined
   // The desktop client enables providers through this CLI too, so enabling one starts the relay it points at.
-  return new EngineImpl(undefined, storeUrl, { authUrl, startRelay: async () => { await ensureRelayRunning(realRelayOps()) } })
+  return new EngineImpl(undefined, storeUrl, {
+    authUrl,
+    startRelay: async () => { await ensureRelayRunning(realRelayOps()) },
+    stopRelay: async () => { await stopRelay(realRelayOps()) },
+  })
 }

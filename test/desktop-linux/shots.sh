@@ -2,8 +2,9 @@
 # Screenshots of the real desktop window (Tauri + WebKitGTK on Xvfb, with the
 # bundled aas sidecar behind IPC) against the live test catalog, for the
 # catalog switch (#125), the skill library (#111), the window shell (#163), the Discover page,
-# install dialog and libraries (#164), the welcome, usage and settings pages (#165), projects (#166),
-# the loopback endpoint the web store asks (#181) and the desktop sign-in with favorites (#195).
+# install dialog and libraries (#164), the welcome, usage and settings pages (#165), projects (#166), the
+# loopback endpoint the web store asks (#181), the relay controls, connection test, provider order and
+# usage breakdown (#192), backup and sync (#112) and the desktop sign-in with favorites (#195).
 # Each step is driven by an
 # agent-store:// link, the keyboard, or aas itself, and checked on disk.
 # Writes /out/NN-*.png, /out/result.txt and /out/cli.txt; exits non-zero if a
@@ -244,11 +245,13 @@ sleep 10
 shot 17b-settings-agents-doctor
 settings_tab 2 4
 shot 17c-settings-data
-settings_tab 3
-shot 17d-settings-account
+settings_tab 3 6
+shot 17c2-settings-backup-not-connected
 settings_tab 4
-shot 17e-settings-cli
+shot 17d-settings-account
 settings_tab 5
+shot 17e-settings-cli
+settings_tab 6
 shot 17f-settings-about
 xdotool mousemove $((X + WIDTH / 2)) $((Y + HEIGHT / 2))
 xdotool key question
@@ -428,88 +431,224 @@ shot 33b-project-missing-last-read
 stop_app
 mv "$PROJ.moved" "$PROJ"
 
-# 13. Sign-in and favorites (#195), against mock-store.ts: the store's device sign-in and
-#     account endpoints, the rest forwarded to the live test store. First without a Secret
-#     Service (the sign-in lasts one run and says so), then with GNOME Keyring running.
-MOCK_PORT=18790
-MOCK=http://127.0.0.1:$MOCK_PORT
-MOCK_STATE=$OUT/mock-store.json
-(cd /work && MOCK_PORT=$MOCK_PORT MOCK_STATE=$MOCK_STATE MOCK_FAVORITES="$NPM_MCP_ID" bun test/desktop-linux/mock-store.ts >"$OUT/mock-store.log" 2>&1 &)
-for _ in $(seq 30); do curl -fs "$MOCK/__state" >/dev/null && break; sleep 1; done
-check "the store stand-in is up" 'curl -fs "$MOCK/__state" >/dev/null'
-APPDATA=$(dirname "$(find "$XDG_DATA_HOME" -path '*agent-store-cli/welcome.json' | head -1)")
-# A favorite saved while signed out, with the catalog summary the client keeps next to it.
-python3 - "$MOCK" "$SKILL_ID" "$APPDATA/favorites.json" <<'PY'
-import json, sys, urllib.parse, urllib.request
-base, rid, out = sys.argv[1:]
-r = json.load(urllib.request.urlopen(f'{base}/__summary?id={urllib.parse.quote(rid, safe="")}'))['resource']
-keep = ['id', 'kind', 'name', 'description', 'author', 'version', 'homepageUrl', 'installs', 'stars', 'verified', 'tags', 'transports', 'origin']
-json.dump({'version': 1, 'local': [{'id': rid, 'resource': {k: r.get(k) for k in keep}}], 'pending': [], 'account': None}, open(out, 'w'))
-PY
-check "seeded a favorite saved while signed out" '[ -s "$APPDATA/favorites.json" ] && grep -q "$SKILL_ID" "$APPDATA/favorites.json"'
-mock() { python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$MOCK_STATE" "$1"; }
-palette() { xdotool key ctrl+k; sleep 2; xdotool type --delay 50 "$1"; sleep 2; xdotool key Return; }
-start_app() { AS_STORE_URL=$MOCK "$APP" >>"$OUT/app-auth.log" 2>&1 & sleep "$SETTLE"; point_at_window; }
-keyring_secret() { secret-tool lookup service com.aas.cli-gui username store-session 2>/dev/null; }
-no_token_on_disk() {
-  for t in $(mock '" ".join(s["issued"])'); do
-    if grep -rqs "$t" "$HOME/.agent-store" "$APPDATA" "$XDG_CONFIG_HOME" "$ARGV_LOG"; then return 1; fi
-  done
-}
+# 13. Backup and sync (#112). A local bare repository is the remote; a second home with its own
+#     ~/.agent-store plays the other device through aas. Device A is the window: connect, back up,
+#     pull what B pushed, resolve a conflict both ways, restore the snapshot taken before that
+#     choice, a secret that stops the backup, and disconnect. The remote must never hold the
+#     marker key, the bearer token typed into the install dialog or the project key.
+REMOTE_DIR=$(mktemp -d)
+REMOTE=$REMOTE_DIR/backup.git
+git init --bare -q --initial-branch=main "$REMOTE"
+MARK=as-marker-key-7f3a9c2e5b1d
+PROVIDER_SLUG=$(printf '[]\n' | "$SIDECAR" __rpc list - | python3 -c 'import json,sys; print(next((i["slug"] for i in json.load(sys.stdin)["data"] if i["category"]=="provider"), ""))')
+check "a provider is installed to hold the marker key" '[ -n "$PROVIDER_SLUG" ]'
+printf '["%s",{"apiKey":"%s"}]\n' "$PROVIDER_SLUG" "$MARK" | "$SIDECAR" __rpc setConfig - >>"$OUT/cli.txt" 2>&1
+remote_has() { git --git-dir="$REMOTE" log --all -p --binary 2>/dev/null | grep -qE "$1"; }
+backup_page() { point_at_window; xdotool key ctrl+6; sleep 2; settings_tab 3 "${1:-10}"; }
+# The settings tabs scroll with the page; scroll back up before clicking them.
+to_top() { xdotool mousemove $((X + WIDTH / 2)) $((Y + HEIGHT / 2)); xdotool click --repeat 20 4; sleep 1; }
+palette() { xdotool key ctrl+k; sleep 2; xdotool type --delay 60 "$1"; sleep 2; xdotool key Return; sleep "${2:-25}"; }
+HOME_B=$(mktemp -d)
+cli_b() { echo "\$ (laptop-b) aas $*" >>"$OUT/cli.txt"; HOME=$HOME_B "$SIDECAR" "$@" >>"$OUT/cli.txt" 2>&1; echo >>"$OUT/cli.txt"; }
 
-start_app
-palette 'act:signin'
-sleep 3
-shot 34-signin-waiting
-sleep 18
-shot 35-signed-in-not-saved
-check "the device sign-in got a session" '[ "$(mock "len(s[\"issued\"])")" = 1 ]'
-check "the local favorite was added to the account" '[ "$(mock "s[\"favorites\"][0]")" = "$SKILL_ID" ]'
-palette 'go:favorites'
-sleep 10
-shot 36-favorites
-stop_app
-check "no session token under ~/.agent-store, the app data folder, ~/.config or a sidecar command line" 'no_token_on_disk'
-start_app
-shot 37-restart-without-keyring-signed-out
-stop_app
-check "without Secret Service the sign-in did not outlive the app" '[ "$(mock "sum(s[\"exchanges\"].values())")" = 1 ]'
-
-printf 'ci-keyring' | gnome-keyring-daemon --unlock --components=secrets >"$OUT/keyring.env" 2>"$OUT/keyring.log"
-set -a; . "$OUT/keyring.env"; set +a
+"$APP" >"$OUT/app-backup-1.log" 2>&1 &
+sleep "$SETTLE"
+backup_page
+shot 34-backup-not-connected
+# From the tab: the panel, then 连接仓库…; the dialog focuses the URL field.
+xdotool key Tab Tab Return
 sleep 2
-check "GNOME Keyring answers on the session bus" 'printf x | secret-tool store --label=probe ci probe && secret-tool lookup ci probe | grep -qx x'
-start_app
-palette 'act:signin'
-sleep 22
-shot 38-signed-in-saved
+xdotool type --delay 30 "$REMOTE"
+xdotool key Tab Tab
+xdotool type --delay 60 'desk-a'
+shot 35-backup-connect-form
+xdotool key Return
+sleep 15
+shot 36-backup-connected
+# The connected step focuses 立即备份.
+xdotool key Return
+sleep 30
+shot 37-backup-first-sync
 stop_app
-SESSION=$(mock 's["issued"][-1]')
-check "the session token is in Secret Service" '[ -n "$SESSION" ] && [ "$(keyring_secret)" = "$SESSION" ]'
-check "still no session token on disk" 'no_token_on_disk'
-before=$(mock "s['exchanges'].get('$SESSION', 0)")
-start_app
-shot 39-restart-still-signed-in
+check "connect wrote this device's connection" 'grep -q desk-a "$HOME/.agent-store/backup/connection.json"'
+check "the first backup pushed a commit by desk-a" '[ "$(git --git-dir="$REMOTE" log -1 --format=%an main 2>/dev/null)" = desk-a ]'
+check "the backup holds the skill" 'git --git-dir="$REMOTE" ls-tree -r --name-only main | grep -q "^items/skill/$SKILL_SLUG/"'
+
+# The other device restores the backup, switches the skill off for Claude Code and uploads that.
+cli_b backup connect "$REMOTE" --device laptop-b
+cli_b backup pull
+check "laptop-b restored the skill" '[ -f "$HOME_B/.agent-store/skills/$SKILL_SLUG/SKILL.md" ]'
+cli_b disable "$SKILL_SLUG" --for claude
+cli_b backup now
+"$APP" >"$OUT/app-backup-2.log" 2>&1 &
+sleep "$SETTLE"
+point_at_window
+palette 'backup-pull'
+backup_page
+shot 38-backup-pulled
 stop_app
-check "a restart signs in from Secret Service" '[ "$(mock "s[\"exchanges\"].get(\"$SESSION\", 0)")" -gt "$before" ]'
-curl -fs -X POST "$MOCK/__revoke" >/dev/null
-AS_STORE_URL=$MOCK "$APP" >>"$OUT/app-auth.log" 2>&1 &
-# The notice toast stays 12 s.
-sleep 8
-shot 40-session-revoked
+check "the pull applied laptop-b's change: no Claude link for the skill" '[ ! -e "$HOME/.claude/skills/find-skills" ]'
+
+# Both devices edit the same skill; backing up here finds the conflict.
+printf '\nEdited on laptop-b.\n' >> "$HOME_B/.agent-store/skills/legacy-skill/SKILL.md"
+cli_b backup now
+printf '\nEdited on desk-a.\n' >> "$LIB/legacy-skill/SKILL.md"
+"$APP" >"$OUT/app-backup-3.log" 2>&1 &
+sleep "$SETTLE"
+point_at_window
+palette 'backup-now'
+backup_page
+shot 39-backup-conflict
+# Panel, 拉取, 立即备份, the auto-sync switch, 断开…, then the conflict's 处理….
+xdotool key Tab Tab Tab Tab Tab Tab Return
+sleep 2
+shot 40-backup-resolve-dialog
+# The first choice has focus; arrows move to 两份都保留. Then 取消, 确定.
+xdotool key Down Down
+sleep 1
+shot 40b-backup-resolve-both
+xdotool key Tab Tab Return
+sleep 25
+shot 41-backup-resolved
+check "kept both: the remote version is installed as legacy-skill-laptop-b" '[ -f "$LIB/legacy-skill-laptop-b/SKILL.md" ] && grep -q "Edited on laptop-b" "$LIB/legacy-skill-laptop-b/SKILL.md"'
+check "kept both: this machine's version stays" 'grep -q "Edited on desk-a" "$LIB/legacy-skill/SKILL.md"'
+check "kept both: the copy is enabled for no agent" '[ ! -e "$HOME/.claude/skills/legacy-skill-laptop-b" ] && [ ! -e "$HOME/.codex/skills/legacy-skill-laptop-b" ]'
+# The newest snapshot is the one taken before that choice: Tab to its 恢复…, confirm (focus is on 取消).
+to_top
+settings_tab 3 6
+xdotool key Tab Tab Tab Tab Tab Tab Return
+sleep 2
+shot 42-backup-restore-confirm
+xdotool key Tab Return
+sleep 25
+shot 43-backup-restored
+check "restoring the snapshot undid the choice" '[ ! -e "$LIB/legacy-skill-laptop-b" ]'
+xdotool click --repeat 15 5
+sleep 1
+shot 44-backup-snapshots-history
 stop_app
-check "a revoked session signs out and leaves Secret Service" '[ -z "$(keyring_secret)" ]'
-start_app
-palette 'act:signin'
-sleep 22
-SESSION=$(mock 's["issued"][-1]')
-palette 'act:signout'
-sleep 5
-shot 41-signed-out
+
+# A key pasted into a skill stops the backup before anything is written; the page names the file.
+GH_FAKE=ghp_$(python3 -c 'import random,string; r=random.Random(7); print("".join(r.choice(string.ascii_letters+string.digits) for _ in range(36)))')
+printf 'token: %s\n' "$GH_FAKE" > "$LIB/legacy-skill/leaked.md"
+"$APP" >"$OUT/app-backup-4.log" 2>&1 &
+sleep "$SETTLE"
+point_at_window
+palette 'backup-now' 20
+backup_page
+shot 45-backup-secret-found
+check "the found key never reached the remote" '! remote_has "$GH_FAKE"'
+rm -f "$LIB/legacy-skill/leaked.md"
+# 断开…: panel, 拉取, 立即备份, the switch, 断开…; the dialog focuses 取消.
+to_top
+settings_tab 3 8
+xdotool key Tab Tab Tab Tab Tab Return
+sleep 2
+shot 46-backup-disconnect-confirm
+xdotool key Tab Return
+sleep 10
+shot 47-backup-disconnected
 stop_app
-check "sign-out ends the session on the server" '[ "$(mock "\"$SESSION\" in s[\"signOuts\"]")" = True ]'
-check "sign-out deletes the credential" '[ -z "$(keyring_secret)" ]'
-check "no session token on disk at the end" 'no_token_on_disk'
+check "disconnect removed only this machine's backup folder" '[ ! -e "$HOME/.agent-store/backup" ] && git --git-dir="$REMOTE" rev-parse -q --verify main >/dev/null'
+check "the remote never held the marker key, the bearer token or the project key" '! remote_has "$MARK|test-token|tok-project"'
+check "the marker key is still set on this machine" 'grep -rqs "$MARK" "$HOME/.agent-store"'
+{
+  echo "\$ git --git-dir=<remote> log --format='%h %an %s' main"
+  git --git-dir="$REMOTE" log --format='%h %an %s' main
+  echo
+} >>"$OUT/cli.txt" 2>&1
+
+# 14. The local relay from the app (#192). Another program holds the relay's port, so starting it reports
+#     EADDRINUSE; once the port is free the relay listens on it, and stopping frees it again. The
+#     connection test reaches the provider with a fake key, prints no key and records no usage. A
+#     provider is moved down with the keyboard, and the usage breakdown is shown per dimension.
+port_open() { (exec 3<>/dev/tcp/127.0.0.1/18780) 2>/dev/null; }
+rpc() { printf '%s\n' "${2:-[]}" | "$SIDECAR" __rpc "$1" -; }
+palette() { xdotool key ctrl+k; sleep 3; xdotool type --delay 60 "$1"; sleep 2; xdotool key Return; sleep "${2:-12}"; }
+FAKE_KEY=sk-or-v1-desktopshots0000000000000000000000
+PROV=$(rpc list | python3 -c 'import json,sys; print(next(i["slug"] for i in json.load(sys.stdin)["data"] if i["category"] == "provider" and i["slug"] != "local"))')
+rpc info "[\"$PROV\"]" | python3 -c 'import json,sys; c=json.load(sys.stdin)["data"].get("currentConfig") or {}; c["apiKey"]=sys.argv[2]; print(json.dumps([sys.argv[1], c]))' "$PROV" "$FAKE_KEY" \
+  | "$SIDECAR" __rpc setConfig - >>"$OUT/cli.txt" 2>&1
+requests_logged() { rpc getRecentRequests '[{"limit":1000}]' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]))'; }
+before=$(requests_logged)
+cli test "$PROV"
+check "aas test reached the provider and printed its answer" 'grep -qE "^  codex +.*\((HTTP [0-9]{3}|[0-9]+ ms)" "$OUT/cli.txt"'
+check "aas test printed no key" '! grep -q "$FAKE_KEY" "$OUT/cli.txt"'
+check "the connection test is not recorded as usage" '[ "$(requests_logged)" = "$before" ]'
+
+check "nothing listens on the relay port yet" '! port_open'
+python3 -m http.server 18780 --bind 127.0.0.1 >/dev/null 2>&1 &
+HOLDER=$!
+sleep 2
+"$APP" >"$OUT/app-relay.log" 2>&1 &
+sleep "$SETTLE"
+point_at_window
+xdotool key ctrl+4
+sleep 15
+shot 50-providers-relay-stopped
+palette 'relay start' 15
+shot 51-relay-port-busy
+rpc getRelayStatus > "$OUT/relay-busy.json"
+check "starting on a busy port reports EADDRINUSE" 'grep -q "\"listening\":false" "$OUT/relay-busy.json" && grep -q EADDRINUSE "$OUT/relay-busy.json"'
+kill "$HOLDER"
+sleep 7
+rpc getRelayStatus > "$OUT/relay-on.json"
+check "once the port is free the relay listens on it" 'port_open && grep -q "\"listening\":true" "$OUT/relay-on.json"'
+xdotool key ctrl+5
+sleep 4
+xdotool key ctrl+4
+sleep 15
+shot 52-relay-running
+
+# The connection test from the provider's pane: Tab from the key field passes its show button.
+palette "$PROV" 15
+xdotool mousemove $((X + 960)) $((Y + 545)) click 1
+sleep 1
+xdotool key Tab Tab Return
+sleep 15
+xdotool mousemove $((X + 980)) $((Y + 500)) click --repeat 4 5
+sleep 1
+shot 53-provider-test
+
+# A second config of the provider, then the first row's handle: Space, Down, Space.
+xdotool key Escape
+rpc duplicateProvider "[\"$PROV\"]" >>"$OUT/cli.txt" 2>&1
+COPY=$(rpc list | python3 -c 'import json,sys; print(next(i["slug"] for i in json.load(sys.stdin)["data"] if i["category"] == "provider" and i["slug"] not in ("local", sys.argv[1])))' "$PROV")
+xdotool key ctrl+5
+sleep 4
+xdotool key ctrl+4
+sleep 15
+shot 54a-provider-order
+xdotool mousemove $((X + 1151)) $((Y + 395)) click 1
+sleep 1
+xdotool key space
+sleep 1
+xdotool key Down
+sleep 1
+xdotool key space
+sleep 12
+shot 54b-provider-reordered
+level_of() { rpc info "[\"$1\"]" | python3 -c 'import json,sys; print((json.load(sys.stdin)["data"].get("currentConfig") or {}).get("level"))'; }
+check "moving the first provider down saved the order as Level 1, 2" '[ "$(level_of "$COPY")" = 1 ] && [ "$(level_of "$PROV")" = 2 ]'
+
+palette 'relay stop' 12
+shot 55-relay-stopped
+rpc getRelayStatus > "$OUT/relay-off.json"
+check "stopping the relay from the app frees the port" '! port_open && grep -q "\"running\":false" "$OUT/relay-off.json"'
+
+# The usage breakdown on the seeded rows: by provider, then the arrow keys through the other views.
+xdotool key ctrl+5
+sleep 10
+shot 56-usage-by-provider
+xdotool mousemove $((X + 285)) $((Y + 488)) click 1
+sleep 1
+xdotool key Right
+sleep 2
+shot 56b-usage-by-model
+xdotool key Right
+sleep 2
+shot 56c-usage-by-agent
+stop_app
 
 cli search find-skills --kind skill
 cli info "$SKILL_ID"
@@ -528,7 +667,7 @@ cli doctor
   cat "$HOME/.codex/config.toml"
 } >>"$OUT/cli.txt" 2>&1
 
-# 14. The loopback endpoint the web store asks (#181): started by the app, answering only the
+# 15. The loopback endpoint the web store asks (#181): started by the app, answering only the
 #     store's origins and the loopback host, and gone with the app. find-skills is installed
 #     by step 2; the other id is not.
 LOCAL_API=127.0.0.1:18781
@@ -565,9 +704,92 @@ sleep 3
 check "after the app quits the port is closed" '! listening'
 check "no aas __local-api process is left" '! pgrep -f -- "__local-api" >/dev/null'
 
+# 16. Sign-in and favorites (#195), against mock-store.ts: the store's device sign-in and
+#     account endpoints, the rest forwarded to the live test store. First without a Secret
+#     Service (the sign-in lasts one run and says so), then with GNOME Keyring running.
+MOCK_PORT=18790
+MOCK=http://127.0.0.1:$MOCK_PORT
+MOCK_STATE=$OUT/mock-store.json
+(cd /work && MOCK_PORT=$MOCK_PORT MOCK_STATE=$MOCK_STATE MOCK_FAVORITES="$NPM_MCP_ID" bun test/desktop-linux/mock-store.ts >"$OUT/mock-store.log" 2>&1 &)
+for _ in $(seq 30); do curl -fs "$MOCK/__state" >/dev/null && break; sleep 1; done
+check "the store stand-in is up" 'curl -fs "$MOCK/__state" >/dev/null'
+APPDATA=$(dirname "$(find "$XDG_DATA_HOME" -path '*agent-store-cli/welcome.json' | head -1)")
+# A favorite saved while signed out, with the catalog summary the client keeps next to it.
+python3 - "$MOCK" "$SKILL_ID" "$APPDATA/favorites.json" <<'PY'
+import json, sys, urllib.parse, urllib.request
+base, rid, out = sys.argv[1:]
+r = json.load(urllib.request.urlopen(f'{base}/__summary?id={urllib.parse.quote(rid, safe="")}'))['resource']
+keep = ['id', 'kind', 'name', 'description', 'author', 'version', 'homepageUrl', 'installs', 'stars', 'verified', 'tags', 'transports', 'origin']
+json.dump({'version': 1, 'local': [{'id': rid, 'resource': {k: r.get(k) for k in keep}}], 'pending': [], 'account': None}, open(out, 'w'))
+PY
+check "seeded a favorite saved while signed out" '[ -s "$APPDATA/favorites.json" ] && grep -q "$SKILL_ID" "$APPDATA/favorites.json"'
+mock() { python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$MOCK_STATE" "$1"; }
+palette() { xdotool key ctrl+k; sleep 2; xdotool type --delay 50 "$1"; sleep 2; xdotool key Return; }
+start_app() { AS_STORE_URL=$MOCK "$APP" >>"$OUT/app-auth.log" 2>&1 & sleep "$SETTLE"; point_at_window; }
+keyring_secret() { secret-tool lookup service com.aas.cli-gui username store-session 2>/dev/null; }
+no_token_on_disk() {
+  for t in $(mock '" ".join(s["issued"])'); do
+    if grep -rqs "$t" "$HOME/.agent-store" "$APPDATA" "$XDG_CONFIG_HOME" "$ARGV_LOG"; then return 1; fi
+  done
+}
+
+start_app
+palette 'act:signin'
+sleep 3
+shot 60-signin-waiting
+sleep 18
+shot 61-signed-in-not-saved
+check "the device sign-in got a session" '[ "$(mock "len(s[\"issued\"])")" = 1 ]'
+check "the local favorite was added to the account" '[ "$(mock "s[\"favorites\"][0]")" = "$SKILL_ID" ]'
+palette 'go:favorites'
+sleep 10
+shot 62-favorites
+stop_app
+check "no session token under ~/.agent-store, the app data folder, ~/.config or a sidecar command line" 'no_token_on_disk'
+start_app
+shot 63-restart-without-keyring-signed-out
+stop_app
+check "without Secret Service the sign-in did not outlive the app" '[ "$(mock "sum(s[\"exchanges\"].values())")" = 1 ]'
+
+printf 'ci-keyring' | gnome-keyring-daemon --unlock --components=secrets >"$OUT/keyring.env" 2>"$OUT/keyring.log"
+set -a; . "$OUT/keyring.env"; set +a
+sleep 2
+check "GNOME Keyring answers on the session bus" 'printf x | secret-tool store --label=probe ci probe && secret-tool lookup ci probe | grep -qx x'
+start_app
+palette 'act:signin'
+sleep 22
+shot 64-signed-in-saved
+stop_app
+SESSION=$(mock 's["issued"][-1]')
+check "the session token is in Secret Service" '[ -n "$SESSION" ] && [ "$(keyring_secret)" = "$SESSION" ]'
+check "still no session token on disk" 'no_token_on_disk'
+before=$(mock "s['exchanges'].get('$SESSION', 0)")
+start_app
+shot 65-restart-still-signed-in
+stop_app
+check "a restart signs in from Secret Service" '[ "$(mock "s[\"exchanges\"].get(\"$SESSION\", 0)")" -gt "$before" ]'
+curl -fs -X POST "$MOCK/__revoke" >/dev/null
+AS_STORE_URL=$MOCK "$APP" >>"$OUT/app-auth.log" 2>&1 &
+# The notice toast stays 12 s.
+sleep 8
+shot 66-session-revoked
+stop_app
+check "a revoked session signs out and leaves Secret Service" '[ -z "$(keyring_secret)" ]'
+start_app
+palette 'act:signin'
+sleep 22
+SESSION=$(mock 's["issued"][-1]')
+palette 'act:signout'
+sleep 5
+shot 67-signed-out
+stop_app
+check "sign-out ends the session on the server" '[ "$(mock "\"$SESSION\" in s[\"signOuts\"]")" = True ]'
+check "sign-out deletes the credential" '[ -z "$(keyring_secret)" ]'
+check "no session token on disk at the end" 'no_token_on_disk'
+
 check "the desktop client started the sidecar with its arguments on stdin" 'grep -qE "^__rpc [A-Za-z]+ -$" "$ARGV_LOG"'
 check "every RPC call kept its arguments off the command line" '! grep "^__rpc" "$ARGV_LOG" | grep -qvE "^__rpc [A-Za-z]+ -$"'
-check "no secret value reached a sidecar command line" '! grep -qE "test-token|tok-project" "$ARGV_LOG"'
+check "no secret value reached a sidecar command line" '! grep -qE "test-token|tok-project|$MARK|$FAKE_KEY" "$ARGV_LOG"'
 
 log "result: $([ $failed = 0 ] && echo PASS || echo FAIL)"
 [ $failed = 0 ]

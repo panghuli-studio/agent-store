@@ -4,6 +4,7 @@ import { AuthProvider } from './state/Auth'
 import { FavoritesProvider } from './state/Favorites'
 import { TerminalLogProvider } from './state/TerminalLog'
 import { ProjectsProvider } from './state/Projects'
+import { BackupProvider } from './state/Backup'
 import { I18nProvider } from './i18n'
 import { TitleBar } from './components/shell/TitleBar'
 import { Sidebar } from './components/shell/Sidebar'
@@ -20,6 +21,7 @@ import { InstallDialog } from './components/install/InstallDialog'
 import { ProjectsPage } from './components/projects/ProjectsPage'
 import { ProjectPage } from './components/projects/ProjectPage'
 import { ProjectDialogs } from './components/projects/ProjectDialogs'
+import { BackupDialogs } from './components/backup/BackupDialogs'
 import { useFirstRunWelcome } from './components/WelcomeDialog'
 import { Toaster } from './components/ui/toast'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -56,6 +58,7 @@ function AppShell() {
       <SignInDialog />
       <InstallDialog />
       <ProjectDialogs />
+      <BackupDialogs />
       <Toaster />
     </div>
   )
@@ -70,9 +73,11 @@ export function App() {
             <FavoritesProvider>
               <TerminalLogProvider>
                 <ProjectsProvider>
-                  <TooltipProvider delayDuration={300}>
-                    <AppShell />
-                  </TooltipProvider>
+                  <BackupProvider>
+                    <TooltipProvider delayDuration={300}>
+                      <AppShell />
+                    </TooltipProvider>
+                  </BackupProvider>
                 </ProjectsProvider>
               </TerminalLogProvider>
             </FavoritesProvider>
