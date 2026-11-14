@@ -9,9 +9,8 @@ mock.module('../../lib/deepLink', () => ({ onDeepLink: async () => () => {} }))
 
 mock.module('../../lib/storeAuth', () => ({
   getStoreBaseUrl: () => 'https://store.test',
-  getAuthScheme: () => 'agent-store',
   emailFromJwt: () => 'dev@example.com',
-  AUTH_REDIRECT_URL: 'agent-store://auth-callback',
+  userIdFromJwt: () => 'u1',
 }))
 
 const { SettingsView } = await import('../SettingsView')
@@ -76,13 +75,13 @@ function openTab(name: string) {
   expect(tab).toHaveAttribute('aria-selected', 'true')
 }
 
-test('has six tabs and opens on General', () => {
+test('has seven tabs and opens on General', () => {
   localStorage.setItem('as-locale', 'zh')
   renderView()
-  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['通用', 'Agent', '数据', '账号', '命令行', '关于'])
+  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['通用', 'Agent', '数据', '备份与同步', '账号', '命令行', '关于'])
   expect(screen.getByRole('tab', { name: '通用' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByText('当前只提供深色主题。')).toBeInTheDocument()
-  expect(screen.queryByText(/同步/)).toBeNull()
+  expect(within(screen.getByRole('tabpanel')).queryByText(/同步/)).toBeNull()
 })
 
 test('General switches the language, the target agent, and opens shortcuts and the welcome', () => {
@@ -172,13 +171,17 @@ test('Account: signed out with both sign-ins, the free plan, upgrade and the Pro
 })
 
 for (const provider of ['GitHub', 'Google']) {
-  test(`使用 ${provider} 登录 opens the store relay page`, async () => {
+  test(`使用 ${provider} 登录 starts a device sign-in and opens its approval page`, async () => {
     localStorage.setItem('as-locale', 'zh')
-    renderView()
+    renderView((method) =>
+      method === 'startSignIn'
+        ? { deviceCode: 'dev-1', userCode: 'ABCDEFGH', verificationUriComplete: 'https://store.test/auth/device?user_code=ABCDEFGH', expiresIn: 600, interval: 1 }
+        : undefined
+    )
     openTab('账号')
     fireEvent.click(screen.getByRole('button', { name: `使用 ${provider} 登录` }))
     await waitFor(() =>
-      expect(openMock).toHaveBeenCalledWith(`https://store.test/auth/desktop?provider=${provider.toLowerCase()}&scheme=agent-store`)
+      expect(openMock).toHaveBeenCalledWith(`https://store.test/auth/device?user_code=ABCDEFGH&provider=${provider.toLowerCase()}`)
     )
   })
 }

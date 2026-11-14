@@ -8,9 +8,11 @@ import { join } from 'path'
 import type { Item, MCPItem, ProviderItem, SkillItem } from '@as/types'
 import { EngineImpl } from '../../engine'
 import { ItemCatalog } from '../../__tests__/helpers/item-catalog'
+import lockfile from 'proper-lockfile'
 import { runGit } from '../git'
+import { BackupBusyError } from '../service'
 import { BackupSecretError } from '../secrets'
-import { writeCredentials } from '../state'
+import { lockPath, lockTarget, writeCredentials } from '../state'
 
 process.env['AS_CLAUDE_BIN'] = ''
 process.env['AS_CODEX_BIN'] = ''
@@ -382,4 +384,18 @@ test('imported items: a skill reaches the other device as a local item; an MCP e
   expect(await b.engine.checkUpdates()).toEqual([])
   expect((await b.engine.backupNow()).uploaded).toEqual([])
   expect(await remoteFile(remote, 'items/mcp/mine/content/item.json')).toContain('imported-mcp')
+}, 60_000)
+
+test('an operation that finds the backup lock held says so with reason busy', async () => {
+  const remote = await bareRemote()
+  const a = await device('laptop')
+  await a.engine.connectBackup({ remote })
+  const release = await lockfile.lock(lockTarget(a.aasHome), { realpath: false, lockfilePath: lockPath(a.aasHome) })
+  try {
+    const err = await a.engine.getBackupStatus().catch(e => e)
+    expect(err).toBeInstanceOf(BackupBusyError)
+    expect((err as BackupBusyError).reason).toBe('busy')
+  } finally {
+    await release()
+  }
 }, 60_000)

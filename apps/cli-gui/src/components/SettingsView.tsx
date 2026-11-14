@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Logo } from './ui/icons'
 import { toast } from './ui/toast'
 import { version as appVersion } from '../../src-tauri/tauri.conf.json'
+import { BackupTab } from './backup/BackupTab'
 
 /** What the `doctor` RPC returns (apps/client-core/src/doctor.ts). */
 interface DoctorFinding {
@@ -31,7 +32,7 @@ interface DoctorFinding {
   message: string
 }
 
-const TABS: SettingsTab[] = ['general', 'agents', 'data', 'account', 'cli', 'about']
+const TABS: SettingsTab[] = ['general', 'agents', 'data', 'backup', 'account', 'cli', 'about']
 
 const CLI_COMMANDS: [string, string][] = [
   ['search [query] [--kind <skill|mcp|provider>]', 'search'],
@@ -44,6 +45,7 @@ const CLI_COMMANDS: [string, string][] = [
   ['config <slug>', 'config'],
   ['sync [--for <agent>]', 'sync'],
   ['relay <start|stop|status>', 'relay'],
+  ['test <slug>', 'test'],
   ['usage [--days N] [--provider <slug>] [--for <agent>]', 'usage'],
   ['update [slug]', 'update'],
   ['info <id|slug>', 'info'],
@@ -324,8 +326,8 @@ function DataTab() {
 }
 
 function AccountTab() {
-  const { t } = useI18n()
-  const { email, signedIn, configured } = useAuth()
+  const { locale, t } = useI18n()
+  const { email, signedIn, configured, persisted, notice } = useAuth()
   const { entitlements, has } = useEntitlement()
   const account = useAccountActions()
   const isPro = entitlements.plan !== 'free'
@@ -336,6 +338,20 @@ function AccountTab() {
 
   return (
     <>
+      {signedIn && !persisted && (
+        <div className="mb-4">
+          <Banner tone="warn" title={t('auth.notSavedT')}>
+            <p>{t('auth.notSavedD')}</p>
+          </Banner>
+        </div>
+      )}
+      {!signedIn && notice === 'expired' && (
+        <div className="mb-4">
+          <Banner tone="warn" title={t('auth.expiredT')}>
+            <p>{t('auth.expiredD')}</p>
+          </Banner>
+        </div>
+      )}
       <RowGroup>
         {signedIn ? (
           <Row
@@ -347,7 +363,7 @@ function AccountTab() {
                 {email ?? t('settings.account.signedIn')}
               </>
             }
-            sub={t('settings.account.signedInSub')}
+            sub={persisted ? [t('settings.account.signedInSub'), t('auth.saved')].join(locale === 'zh' ? '' : ' ') : t('settings.account.signedInSub')}
           >
             <Button size="sm" onClick={() => void account.signOut()} disabled={!configured || account.busy}>
               {t('settings.account.logout')}
@@ -566,6 +582,7 @@ export function SettingsView() {
     general: GeneralTab,
     agents: AgentsTab,
     data: DataTab,
+    backup: BackupTab,
     account: AccountTab,
     cli: CliTab,
     about: AboutTab,
@@ -580,7 +597,7 @@ export function SettingsView() {
         <TabsList aria-label={t('settings.title')} className="mb-4">
           {TABS.map((tab) => (
             <TabsTrigger key={tab} value={tab}>
-              {t(`settings.tabs.${tab}`)}
+              {tab === 'backup' ? t('bk.tab') : t(`settings.tabs.${tab}`)}
             </TabsTrigger>
           ))}
         </TabsList>

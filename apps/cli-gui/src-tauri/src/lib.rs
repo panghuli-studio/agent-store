@@ -1,3 +1,5 @@
+mod credentials;
+
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_shell::process::CommandChild;
@@ -48,6 +50,11 @@ pub fn run() {
     .plugin(tauri_plugin_deep_link::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
+    .invoke_handler(tauri::generate_handler![
+      credentials::credential_get,
+      credentials::credential_set,
+      credentials::credential_delete
+    ])
     .setup(|app| {
       start_local_api(app);
       if cfg!(debug_assertions) {

@@ -1,14 +1,17 @@
 import { AppStateProvider, useAppState } from './state/AppState'
 import { EntitlementProvider } from './state/Entitlement'
 import { AuthProvider } from './state/Auth'
+import { FavoritesProvider } from './state/Favorites'
 import { TerminalLogProvider } from './state/TerminalLog'
 import { ProjectsProvider } from './state/Projects'
+import { BackupProvider } from './state/Backup'
 import { I18nProvider } from './i18n'
 import { TitleBar } from './components/shell/TitleBar'
 import { Sidebar } from './components/shell/Sidebar'
 import { StatusBar } from './components/shell/StatusBar'
 import { CommandPalette } from './components/shell/CommandPalette'
 import { ShellDialogs } from './components/shell/ShellDialogs'
+import { SignInDialog } from './components/shell/SignInDialog'
 import { DiscoverPage } from './components/discover/DiscoverPage'
 import { LibraryPage } from './components/library/LibraryPage'
 import { ProvidersPage } from './components/library/ProvidersPage'
@@ -18,6 +21,7 @@ import { InstallDialog } from './components/install/InstallDialog'
 import { ProjectsPage } from './components/projects/ProjectsPage'
 import { ProjectPage } from './components/projects/ProjectPage'
 import { ProjectDialogs } from './components/projects/ProjectDialogs'
+import { BackupDialogs } from './components/backup/BackupDialogs'
 import { useFirstRunWelcome } from './components/WelcomeDialog'
 import { Toaster } from './components/ui/toast'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -51,8 +55,10 @@ function AppShell() {
       <StatusBar />
       <CommandPalette />
       <ShellDialogs />
+      <SignInDialog />
       <InstallDialog />
       <ProjectDialogs />
+      <BackupDialogs />
       <Toaster />
     </div>
   )
@@ -64,13 +70,17 @@ export function App() {
       <AppStateProvider>
         <EntitlementProvider>
           <AuthProvider>
-            <TerminalLogProvider>
-              <ProjectsProvider>
-                <TooltipProvider delayDuration={300}>
-                  <AppShell />
-                </TooltipProvider>
-              </ProjectsProvider>
-            </TerminalLogProvider>
+            <FavoritesProvider>
+              <TerminalLogProvider>
+                <ProjectsProvider>
+                  <BackupProvider>
+                    <TooltipProvider delayDuration={300}>
+                      <AppShell />
+                    </TooltipProvider>
+                  </BackupProvider>
+                </ProjectsProvider>
+              </TerminalLogProvider>
+            </FavoritesProvider>
           </AuthProvider>
         </EntitlementProvider>
       </AppStateProvider>

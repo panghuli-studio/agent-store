@@ -12,8 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
   && apt-get install -y --no-install-recommends nodejs \
     libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
     build-essential curl file ca-certificates \
-    xvfb xdotool imagemagick dbus-x11 xdg-utils desktop-file-utils libglib2.0-bin fonts-noto-cjk sudo unzip rpm2cpio cpio rpm \
+    xvfb xdotool imagemagick dbus-x11 xdg-utils desktop-file-utils libglib2.0-bin fonts-noto-cjk sudo unzip rpm2cpio cpio rpm locales git \
   && rm -rf /var/lib/apt/lists/*
+# WebKitGTK takes navigator.language from the process locale, which falls back to C (English)
+# unless it is installed; marketing.sh starts the client in each.
+RUN locale-gen en_US.UTF-8 zh_CN.UTF-8
 
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 RUN npm install -g pnpm@11.5.0
@@ -41,6 +44,14 @@ RUN cd apps/cli-gui && pnpm exec tauri bundle --bundles deb,rpm \
 RUN cd apps/cli-gui && pnpm bundle:appimage \
   && cp src-tauri/target/release/bundle/appimage/*.AppImage /bundles/ \
   && chmod a+rx /bundles/*
+
+# GNOME Keyring for the sign-in checks in shots.sh (#195). Its D-Bus activation files are moved
+# aside, so the keyring runs only once shots.sh starts it and the first checks see a desktop
+# without a Secret Service.
+RUN apt-get update && apt-get install -y --no-install-recommends gnome-keyring libsecret-tools \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /usr/share/dbus-1/services-disabled \
+  && for f in /usr/share/dbus-1/services/*secrets* /usr/share/dbus-1/services/*keyring*; do [ -e "$f" ] && mv "$f" /usr/share/dbus-1/services-disabled/; done; true
 
 # A disposable home: the client writes skills and MCP config under it.
 # The deb is installed at run time by run.sh; appimage.sh runs the AppImage.
