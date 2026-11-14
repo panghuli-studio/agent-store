@@ -4,7 +4,7 @@ import type { BackupHistoryEntry, BackupItemRef, BackupSnapshot, BackupStatus } 
 import { useI18n, useT } from '../../i18n'
 import { joinNames, TARGET_LABEL } from '../../lib/agents'
 import {
-  describeBackupError, describeFinding, formatWhen, snapshotLabel, splitFindingPath, syncState, uploadedCount, type SyncState,
+  counted, describeBackupError, describeFinding, formatWhen, snapshotLabel, splitFindingPath, syncState, uploadedCount, type SyncState,
 } from '../../lib/backup'
 import type { Section as NavSection } from '../../lib/nav'
 import { useNavigate } from '../../lib/useNavigate'
@@ -151,7 +151,7 @@ function StatusRows({ status }: { status: BackupStatus }) {
           {label('now')}
         </Button>
       </Row>
-      <Row title={t('bk.auto')} sub={status.lastSync ? t('bk.autoD') : `${t('bk.autoD')}${t('bk.autoAfterFirst')}`}>
+      <Row title={t('bk.auto')} sub={status.lastSync ? t('bk.autoD') : [t('bk.autoD'), t('bk.autoAfterFirst')].join(locale === 'en' ? ' ' : '')}>
         <Switch
           kind="provider"
           aria-label={t('bk.auto')}
@@ -326,7 +326,7 @@ function NotUploaded({ status }: { status: BackupStatus }) {
     ...status.excludedFiles.slice(0, EXCLUDED_SHOWN).map((e) => fmt(t('bk.excluded'), e.slug, e.file, t(`bk.why.${e.reason}`))),
   ]
   const more = status.excludedFiles.length - EXCLUDED_SHOWN
-  if (more > 0) lines.push(fmt(t('bk.excludedMore'), more))
+  if (more > 0) lines.push(counted(t, 'bk.excludedMore', more))
   if (!lines.length) return null
   return (
     <section aria-label={t('bk.localT')}>

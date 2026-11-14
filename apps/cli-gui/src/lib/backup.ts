@@ -50,6 +50,11 @@ export function syncState(status: BackupStatus, opts: { running: boolean; error:
   return status.lastSync ? 'synced' : 'never'
 }
 
+/** English picks the singular for one (`<key>One`); Chinese has the same text under both keys. */
+export function counted(t: TFn, key: string, n: number): string {
+  return t(n === 1 ? `${key}One` : key).replace('{0}', String(n))
+}
+
 export function isBusyError(err: unknown): boolean {
   return err instanceof RpcError && err.fields.reason === 'busy'
 }

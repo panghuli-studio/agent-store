@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { BackupConflict, BackupConflictChoice, BackupConnectResult, BackupSnapshot } from '@as/types'
 import { useI18n, useT } from '../../i18n'
 import { errorText } from '../../lib/rpc'
-import { describeBackupError, deviceSlug, formatWhen, isHttpsRemote, redactRemote, snapshotLabel } from '../../lib/backup'
+import { counted, describeBackupError, deviceSlug, formatWhen, isHttpsRemote, redactRemote, snapshotLabel } from '../../lib/backup'
 import type { FriendlyError } from '../../lib/errors'
 import { useBackup } from '../../state/Backup'
 import { useTerminalLog } from '../../state/TerminalLog'
@@ -108,7 +108,7 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
             <p className="text-[13px] text-fg-2">{t('bk.connectedEmpty')}</p>
           ) : (
             <>
-              <p className="mb-2 text-[13px] text-fg">{fmt(t('bk.connectedItems'), items)}</p>
+              <p className="mb-2 text-[13px] text-fg">{counted(t, 'bk.connectedItems', items)}</p>
               <dl className="flex flex-col gap-2 text-[12.5px]">
                 <div>
                   <dt className="font-semibold text-fg">{t('bk.pullChoice')}</dt>

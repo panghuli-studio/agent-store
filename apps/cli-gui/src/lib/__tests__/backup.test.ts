@@ -90,3 +90,13 @@ test('a run that only found conflicts says so instead of "nothing to sync"', asy
   expect(syncSummary('now', base, zh)).toBe(zh('bk.resultNothing'))
   expect(syncSummary('now', { ...base, conflicts: [conflict] }, zh)).toBe('有 1 项冲突待处理，其余内容已经一致。')
 })
+
+test('English counts pick the singular for one; Chinese reads the same either way', async () => {
+  const { counted } = await import('../backup')
+  const en = (key: string) => key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], messages.en) as string
+  expect(counted(en, 'bk.resultConflicts', 1)).toBe('1 conflict to resolve; everything else already matches.')
+  expect(counted(en, 'bk.resultConflicts', 2)).toBe('2 conflicts to resolve; everything else already matches.')
+  expect(counted(en, 'bk.connectedItems', 1)).toBe('The repository already holds 1 backed-up item.')
+  expect(counted(en, 'bk.excludedMore', 1)).toBe('1 more file not uploaded')
+  expect(counted(zh, 'bk.resultConflicts', 1)).toBe(counted(zh, 'bk.resultConflicts', 2).replace('2', '1'))
+})
