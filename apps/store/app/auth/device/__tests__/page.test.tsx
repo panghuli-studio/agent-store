@@ -57,6 +57,7 @@ test('signed in: shows the code and the account, and approves only on a click', 
   fireEvent.click(screen.getByRole('button', { name: '允许' }))
   expect(await screen.findByText('已允许')).toBeInTheDocument()
   expect(calls[1]).toEqual({ path: '/device/approve', init: { method: 'POST', body: { userCode: 'ABCDEFGH' } } })
+  expect(localStorage.getItem('as.desktopClient')).toBe('1')
 })
 
 test('deny sends the denial', async () => {

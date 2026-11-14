@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { AuthStatus } from '@/components/AuthStatus'
 import { authClient } from '@/lib/auth/client'
 import { formatUserCode } from '@/lib/auth/user-code'
+import { markDesktopSeen } from '@/lib/local-client'
 
 // Approval page of the desktop sign-in (device authorization grant, #195). The
 // client opens /auth/device?user_code=…&provider=…, shows the same code, and polls
@@ -50,6 +51,7 @@ export default function DesktopDeviceApproval() {
       return
     }
     setCode(userCode)
+    markDesktopSeen()
 
     async function run() {
       const session = await authClient.getSession().catch(() => null)
