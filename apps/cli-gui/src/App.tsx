@@ -1,6 +1,7 @@
 import { AppStateProvider, useAppState } from './state/AppState'
 import { EntitlementProvider } from './state/Entitlement'
 import { AuthProvider } from './state/Auth'
+import { FavoritesProvider } from './state/Favorites'
 import { TerminalLogProvider } from './state/TerminalLog'
 import { ProjectsProvider } from './state/Projects'
 import { BackupProvider } from './state/Backup'
@@ -10,6 +11,7 @@ import { Sidebar } from './components/shell/Sidebar'
 import { StatusBar } from './components/shell/StatusBar'
 import { CommandPalette } from './components/shell/CommandPalette'
 import { ShellDialogs } from './components/shell/ShellDialogs'
+import { SignInDialog } from './components/shell/SignInDialog'
 import { DiscoverPage } from './components/discover/DiscoverPage'
 import { LibraryPage } from './components/library/LibraryPage'
 import { ProvidersPage } from './components/library/ProvidersPage'
@@ -53,6 +55,7 @@ function AppShell() {
       <StatusBar />
       <CommandPalette />
       <ShellDialogs />
+      <SignInDialog />
       <InstallDialog />
       <ProjectDialogs />
       <BackupDialogs />
@@ -67,15 +70,17 @@ export function App() {
       <AppStateProvider>
         <EntitlementProvider>
           <AuthProvider>
-            <TerminalLogProvider>
-              <ProjectsProvider>
-                <BackupProvider>
-                  <TooltipProvider delayDuration={300}>
-                    <AppShell />
-                  </TooltipProvider>
-                </BackupProvider>
-              </ProjectsProvider>
-            </TerminalLogProvider>
+            <FavoritesProvider>
+              <TerminalLogProvider>
+                <ProjectsProvider>
+                  <BackupProvider>
+                    <TooltipProvider delayDuration={300}>
+                      <AppShell />
+                    </TooltipProvider>
+                  </BackupProvider>
+                </ProjectsProvider>
+              </TerminalLogProvider>
+            </FavoritesProvider>
           </AuthProvider>
         </EntitlementProvider>
       </AppStateProvider>
