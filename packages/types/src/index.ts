@@ -26,6 +26,9 @@ export type {
   RecentRequestRow,
   ProviderHealth,
   RelayStatus,
+  RelayListener,
+  ProviderTestOutcome,
+  ProviderTestResult,
   LocalRelayConfig,
   BudgetConfig,
   BudgetStatus,
@@ -47,6 +50,7 @@ export type {
 } from './backup'
 export type { Plan, SubscriptionStatus, SubscriptionPeriod, MySubscription, Entitlements } from './entitlement'
 export { PRICING, formatPrice } from './pricing'
+export { RELAY_PORT } from './relay'
 export type { BillingPeriod } from './pricing'
 export type {
   ResourceKind,

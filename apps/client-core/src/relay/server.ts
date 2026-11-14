@@ -1,4 +1,4 @@
-import type { RegistryJson, ToolTarget } from '@as/types'
+import { RELAY_PORT, type RegistryJson, type ToolTarget } from '@as/types'
 import { readRegistry } from '../registry/index'
 import { findOrderedProvidersForTarget } from './provider-order'
 import { forwardWithFailover } from './forward'
@@ -7,7 +7,7 @@ import { recordProviderHealthBatch, getCoolingProviderSlugs, type ProviderAttemp
 import { resolveEntitlements } from '../entitlement/index'
 import { ensureRelayToken, hasRelayToken } from './token'
 
-export const RELAY_PORT = 18780
+export { RELAY_PORT }
 
 // Free plan: basic reactive failover across up to two upstreams. Pro's smart
 // routing lifts this cap and adds proactive health-aware avoidance.
@@ -36,10 +36,15 @@ export interface RelayServerOptions {
   fetchImpl?: typeof fetch
 }
 
-const ROUTES: Record<string, ToolTarget> = {
-  '/v1/messages': 'claude',
-  '/responses': 'codex',
+/** The path each agent calls on the relay; the relay sends it on to the provider unless the provider sets endpointPath. */
+export const RELAY_ROUTE_PATHS: Record<ToolTarget, string> = {
+  claude: '/v1/messages',
+  codex: '/responses',
 }
+
+const ROUTES: Record<string, ToolTarget> = Object.fromEntries(
+  Object.entries(RELAY_ROUTE_PATHS).map(([target, path]) => [path, target as ToolTarget])
+)
 
 export function startRelayServer(options: RelayServerOptions): { stop: () => void; port: number } {
   const { aasHome, port = RELAY_PORT, fetchImpl } = options
