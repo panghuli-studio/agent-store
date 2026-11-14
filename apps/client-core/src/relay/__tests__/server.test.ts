@@ -537,3 +537,37 @@ describe('relay access control', () => {
     expect(await readToken()).toBe(token)
   })
 })
+
+test('a saved built-in local entry is never forwarded to and does not take a free upstream slot', async () => {
+  const legacyLocal = { name: '默认', apiKey: 'built-in', baseUrl: 'http://127.0.0.1:18100', level: 1 }
+  const entry = (slug: string, parentSlug?: string): InstalledItem => ({
+    slug, category: 'provider', version: '1.0.0',
+    installedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    compatibleWith: ['claude', 'codex'], enabledFor: { claude: true }, ...(parentSlug ? { parentSlug } : {}),
+  })
+  await writeRegistry(aasHome, { installed: [entry('local'), entry('local-copy', 'local'), entry('p1'), entry('p2')] })
+  const configs: Record<string, Record<string, unknown>> = {
+    local: legacyLocal,
+    'local-copy': legacyLocal,
+    p1: { apiKey: 'k1', baseUrl: 'https://p1.example.com', level: 1 },
+    p2: { apiKey: 'k2', baseUrl: 'https://p2.example.com', level: 2 },
+  }
+  for (const [slug, config] of Object.entries(configs)) {
+    const dir = itemDir(aasHome, 'provider', slug)
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'config.json'), JSON.stringify(config))
+  }
+
+  const calls: string[] = []
+  const fetchImpl = (async (url: string) => {
+    calls.push(url)
+    return new Response('boom', { status: 502 })
+  }) as typeof fetch
+
+  const server = startRelayServer({ aasHome, port: 0, fetchImpl })
+  stop = server.stop
+
+  await relayFetch(`http://127.0.0.1:${server.port}/v1/messages`, { method: 'POST', body: JSON.stringify({ model: 'claude-3-5-sonnet' }) })
+
+  expect(calls).toEqual(['https://p1.example.com/v1/messages', 'https://p2.example.com/v1/messages'])
+})

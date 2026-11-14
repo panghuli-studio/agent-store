@@ -43,7 +43,6 @@ const UPSTREAM_PROTOCOLS = ['自动检测', 'openai_chat', 'claude_messages', 'c
 const ICONS = ['默认', 'anthropic', 'openai', 'google', 'adobe']
 const LEVELS = Array.from({ length: 10 }, (_, i) => String(i + 1))
 const levelOptions = (current: string) => (LEVELS.includes(current) ? LEVELS : [...LEVELS, current])
-const LOCAL_DEFAULT_BASE_URL = `http://${AGENT_RELAY_ADDRESS}`
 
 export function toEditValues(current: Record<string, unknown> | undefined, fallbackName: string, isLocal = false): EditValues {
   const c = current ?? {}
@@ -56,9 +55,9 @@ export function toEditValues(current: Record<string, unknown> | undefined, fallb
     mapping && typeof mapping === 'object' ? Object.entries(mapping as Record<string, unknown>).map(([from, to]) => ({ from, to: String(to) })) : []
   return {
     name: String(c['name'] ?? (isLocal ? '默认' : fallbackName)),
-    apiKey: String(c['apiKey'] ?? (isLocal ? 'built-in' : '')),
+    apiKey: String(c['apiKey'] ?? ''),
     apiKeys: Array.isArray(c['apiKeys']) ? (c['apiKeys'] as unknown[]).filter((k): k is string => typeof k === 'string') : [],
-    baseUrl: String(c['baseUrl'] ?? (isLocal ? LOCAL_DEFAULT_BASE_URL : '')),
+    baseUrl: String(c['baseUrl'] ?? ''),
     homepage: String(c['homepage'] ?? ''),
     endpointPath: String(c['endpointPath'] ?? ''),
     upstreamProtocol: String(c['upstreamProtocol'] ?? '自动检测'),
@@ -206,7 +205,7 @@ export function ProviderPane({
   async function duplicate() {
     appendLine(`$ aas duplicate ${slug}`)
     try {
-      const { newSlug } = await callRpc<{ newSlug: string }>('duplicateProvider', [slug])
+      const { newSlug } = await callRpc<{ newSlug: string }>('duplicateProvider', [slug, t('prov.copyName').replace('{0}', values.name || slug)])
       appendLine(`✓ ${t('lib.childAdded')} ${newSlug}`, 'green')
       setSelectedSlug(newSlug)
     } catch (err) {

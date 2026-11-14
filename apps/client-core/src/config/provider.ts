@@ -118,19 +118,20 @@ export async function readProviderConnection(itemDir: string): Promise<ProviderC
 export async function duplicateProviderConnection(
   sourceDir: string,
   targetDir: string,
-  newSlug: string
+  newSlug: string,
+  name?: string
 ): Promise<void> {
   await mkdir(targetDir, { recursive: true })
 
   const manifestRaw = JSON.parse(
     await readFile(join(sourceDir, 'manifest.json'), 'utf-8')
   ) as Record<string, unknown>
-  const baseName = typeof manifestRaw['name'] === 'string' ? manifestRaw['name'] : newSlug
+  const copyName = name?.trim() || (typeof manifestRaw['name'] === 'string' ? manifestRaw['name'] : newSlug)
   const manifest = {
     ...manifestRaw,
     slug: newSlug,
     id: newSlug,
-    name: `${baseName} 副本`,
+    name: copyName,
   }
   await writeFile(join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
 
@@ -147,5 +148,6 @@ export async function duplicateProviderConnection(
   if ('apiKey' in config) config['apiKey'] = ''
   delete config['apiKeys']
   delete config['token']
+  if (name?.trim()) config['name'] = copyName
   await atomicWriteSecretFile(join(targetDir, 'config.json'), JSON.stringify(config, null, 2))
 }

@@ -20,7 +20,7 @@ const RPC_METHODS: Record<string, RpcHandler> = {
   update: (e, a) => e.update(a[0] as string | undefined),
   list: (e, a) => e.list(a[0] as ListOptions | undefined),
   info: (e, a) => e.info(a[0] as string),
-  duplicateProvider: (e, a) => e.duplicateProvider(a[0] as string),
+  duplicateProvider: (e, a) => e.duplicateProvider(a[0] as string, typeof a[1] === 'string' ? a[1] : undefined),
   getUsageSummary: (e, a) => e.getUsageSummary(a[0] as UsageSummaryOptions | undefined),
   getRecentRequests: (e, a) => e.getRecentRequests(a[0] as { limit?: number } | undefined),
   getRelayStatus: (e) => e.getRelayStatus(),

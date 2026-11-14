@@ -132,6 +132,21 @@ test('runRpc calls duplicateProvider with the slug and returns the new slug', as
   expect(parsed.data.newSlug).toBe('openai-provider-copy')
 })
 
+test('runRpc passes the localized copy name to duplicateProvider', async () => {
+  let received: unknown[] = []
+  const duplicateProvider = async (...args: unknown[]) => {
+    received = args
+    return { newSlug: 'openai-provider-copy' }
+  }
+  const code = await runRpc(
+    makeEngine({ duplicateProvider: duplicateProvider as Engine['duplicateProvider'] }),
+    ['duplicateProvider', '["openai-provider","OpenAI copy"]'],
+    () => {}
+  )
+  expect(code).toBe(0)
+  expect(received).toEqual(['openai-provider', 'OpenAI copy'])
+})
+
 test('runRpc calls getUsageSummary and returns its rows', async () => {
   const rows = [{ date: '2026-07-05', providerSlug: 'yls', target: 'claude', model: 'claude-sonnet-4-5', requestCount: 3, successCount: 3, unpricedRequestCount: 0, inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 }]
   const getUsageSummary = async () => rows

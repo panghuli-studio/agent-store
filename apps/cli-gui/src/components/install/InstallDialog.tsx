@@ -357,7 +357,7 @@ export function InstallDialog() {
       try {
         if (f.providerEntry) {
           appendLine(`$ aas duplicate ${f.providerEntry}`)
-          const { newSlug } = await callRpc<{ newSlug: string }>('duplicateProvider', [f.providerEntry])
+          const { newSlug } = await callRpc<{ newSlug: string }>('duplicateProvider', [f.providerEntry, t('prov.copyName').replace('{0}', item.name)])
           appendLine(`✓ ${t('lib.childAdded')} ${newSlug}`, 'green')
           mark('install', 'ok')
           update(mine, { slug: newSlug, results: {}, phase: { kind: 'done' } })

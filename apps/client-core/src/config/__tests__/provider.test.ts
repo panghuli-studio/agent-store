@@ -48,7 +48,7 @@ test('readProviderConnection ignores a malformed authType', async () => {
   expect(conn.authType).toBeUndefined()
 })
 
-test('duplicateProviderConnection copies manifest with new slug/id and appends a suffix to the name', async () => {
+test('duplicateProviderConnection copies manifest with new slug/id and keeps the name when the caller gives none', async () => {
   const sourceDir = join(dir, 'source')
   const targetDir = join(dir, 'target')
   await mkdir(sourceDir, { recursive: true })
@@ -60,10 +60,26 @@ test('duplicateProviderConnection copies manifest with new slug/id and appends a
   const manifest = JSON.parse(await readFile(join(targetDir, 'manifest.json'), 'utf-8'))
   expect(manifest.slug).toBe('yls-copy')
   expect(manifest.id).toBe('yls-copy')
-  expect(manifest.name).toBe('yls 副本')
+  expect(manifest.name).toBe('yls')
 
   const config = JSON.parse(await readFile(join(targetDir, 'config.json'), 'utf-8'))
   expect(config).toEqual({ apiKey: '', baseUrl: 'https://x.com' })
+})
+
+test('duplicateProviderConnection names the copy, in the manifest and in config.json, with the name the caller passes', async () => {
+  const sourceDir = join(dir, 'source-named')
+  const targetDir = join(dir, 'target-named')
+  await mkdir(sourceDir, { recursive: true })
+  await writeFile(join(sourceDir, 'manifest.json'), JSON.stringify({ id: 'yls', slug: 'yls', name: 'yls' }))
+  await writeFile(join(sourceDir, 'config.json'), JSON.stringify({ name: 'Work', apiKey: 'k', baseUrl: 'https://x.com' }))
+
+  await duplicateProviderConnection(sourceDir, targetDir, 'yls-copy', 'Work copy')
+
+  const manifest = JSON.parse(await readFile(join(targetDir, 'manifest.json'), 'utf-8'))
+  expect(manifest.name).toBe('Work copy')
+  const config = JSON.parse(await readFile(join(targetDir, 'config.json'), 'utf-8'))
+  expect(config).toEqual({ name: 'Work copy', apiKey: '', baseUrl: 'https://x.com' })
+  expect(JSON.stringify([manifest, config])).not.toContain('副本')
 })
 
 test('duplicateProviderConnection falls back to the new slug for the copy name when the source manifest has no name', async () => {
@@ -75,7 +91,7 @@ test('duplicateProviderConnection falls back to the new slug for the copy name w
   await duplicateProviderConnection(sourceDir, targetDir, 'yls-copy')
 
   const manifest = JSON.parse(await readFile(join(targetDir, 'manifest.json'), 'utf-8'))
-  expect(manifest.name).toBe('yls-copy 副本')
+  expect(manifest.name).toBe('yls-copy')
   expect(manifest.name).not.toContain('undefined')
 })
 

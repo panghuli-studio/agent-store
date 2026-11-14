@@ -117,6 +117,7 @@ export const libraryZh: Dict = {
     remove: '移除',
     advD: '模型白名单、模型映射、可用性监控',
     dup: '再添加一份配置',
+    copyName: '{0} 副本',
   },
   relayCard: {
     title: '本地中转',
@@ -313,6 +314,7 @@ export const libraryEn: Dict = {
     remove: 'Remove',
     advD: 'Model whitelist, model mapping, availability monitoring',
     dup: 'Add another config',
+    copyName: '{0} copy',
   },
   relayCard: {
     title: 'Local relay',

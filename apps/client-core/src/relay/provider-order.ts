@@ -1,6 +1,7 @@
 import type { InstalledItem, RegistryJson, ToolTarget } from '@as/types'
 import { itemDir } from '../paths'
 import { readProviderConnection, type ProviderConnection } from '../config/provider'
+import { isLocalRelayEntry } from './local-entry'
 
 export interface OrderedProviderCandidate {
   item: InstalledItem
@@ -15,6 +16,7 @@ export async function findOrderedProvidersForTarget(
   const enabled = registry.installed.filter(
     (entry) =>
       entry.category === 'provider' &&
+      !isLocalRelayEntry(entry) &&
       entry.compatibleWith.includes(target) &&
       entry.enabledFor[target] === true
   )
