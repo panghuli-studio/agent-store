@@ -54,7 +54,7 @@ function mockRpc({
       return rows
     }
     if (method === 'getRelayStatus') return running ? { running, pid: 42, listeners: LISTENING, routedAgents: {} } : { running, routedAgents: {} }
-    if (method === 'listLocalConfigs') return [{ id: 'default', name: 'default', port: 18100, enabled: true, enabledFor: {} }]
+    if (method === 'listLocalConfigs') return [{ id: 'default', name: 'default', port: 18780, enabled: true, enabledFor: {} }]
     if (method === 'getEntitlements') return plan
     if (method === 'getBudgetStatus') return { monthlyLimitUsd: null, spentUsd: 0, monthStart: '2026-11-01', fraction: null, projectedUsd: 0, projectedOverBudget: false, alertLevel: 'none' }
     if (method === 'getBudget') return { monthlyLimitUsd: null, alertThresholds: [0.8, 1] }

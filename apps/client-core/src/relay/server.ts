@@ -1,4 +1,4 @@
-import type { RegistryJson, ToolTarget } from '@as/types'
+import { RELAY_PORT, type RegistryJson, type ToolTarget } from '@as/types'
 import { readRegistry } from '../registry/index'
 import { findOrderedProvidersForTarget } from './provider-order'
 import { forwardWithFailover } from './forward'
@@ -7,7 +7,7 @@ import { recordProviderHealthBatch, getCoolingProviderSlugs, type ProviderAttemp
 import { resolveEntitlements } from '../entitlement/index'
 import { ensureRelayToken, hasRelayToken } from './token'
 
-export const RELAY_PORT = 18780
+export { RELAY_PORT }
 
 // Free plan: basic reactive failover across up to two upstreams. Pro's smart
 // routing lifts this cap and adds proactive health-aware avoidance.

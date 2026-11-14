@@ -43,7 +43,7 @@ const UPSTREAM_PROTOCOLS = ['自动检测', 'openai_chat', 'claude_messages', 'c
 const ICONS = ['默认', 'anthropic', 'openai', 'google', 'adobe']
 const LEVELS = Array.from({ length: 10 }, (_, i) => String(i + 1))
 const levelOptions = (current: string) => (LEVELS.includes(current) ? LEVELS : [...LEVELS, current])
-const LOCAL_DEFAULT_BASE_URL = 'http://127.0.0.1:18100'
+const LOCAL_DEFAULT_BASE_URL = `http://${AGENT_RELAY_ADDRESS}`
 
 export function toEditValues(current: Record<string, unknown> | undefined, fallbackName: string, isLocal = false): EditValues {
   const c = current ?? {}
