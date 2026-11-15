@@ -165,6 +165,5 @@ allows method names made of letters).
 
 - Project-level skills and MCP entries.
 - Skills that are links.
-- macOS and Windows have not been run. On macOS a GUI app gets a short `PATH` without Homebrew or `~/.local/bin`, so
-  the sidecar may not find `claude` / `codex` even when a terminal does; detection then reports no CLI and MCP writes go
-  through the file edit, the same as before this change (#203).
+- Import has not been run on macOS or Windows. The desktop client on macOS takes `PATH` from the user's login shell at
+  startup (#203), so detection and MCP writes find the same `claude` / `codex` as a terminal.
