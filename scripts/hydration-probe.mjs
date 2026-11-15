@@ -70,7 +70,7 @@ for (const locale of ['en', 'zh']) {
     })
     const page = await ctx.newPage()
     let errs = []
-    page.on('pageerror', (e) => errs.push('pageerror: ' + e.message.slice(0, 300)))
+    page.on('pageerror', (e) => errs.push('pageerror: ' + e.message.slice(0, 12000)))
     page.on('console', (m) => {
       if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push('console: ' + m.text().slice(0, 4000))
     })
@@ -79,8 +79,8 @@ for (const locale of ['en', 'zh']) {
         errs = []
         total++
         try {
-          await page.goto(base + p, { waitUntil: 'networkidle', timeout: 60_000 })
-          await page.waitForTimeout(300)
+          await page.goto(base + p, { waitUntil: 'load', timeout: 30_000 })
+          await page.waitForTimeout(1500)
         } catch (e) {
           console.log(`${locale}/${width} ${p} goto: ${e.message.split('\n')[0]}`)
           continue
