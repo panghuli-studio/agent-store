@@ -52,22 +52,9 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Hydration check
         run: cp scripts/store-hydration.mjs /tmp/pw/ && node /tmp/pw/store-hydration.mjs http://localhost:3000 3
-  lockfile:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: |
-          printf 'patchedDependencies:\n  next@15.5.20: patches/next@15.5.20.patch\n' >> pnpm-workspace.yaml
-          pnpm install --lockfile-only
-          git diff --stat
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lockfile
-          path: |
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
+      - name: Hydration check, second pass
+        if: always()
+        run: node /tmp/pw/store-hydration.mjs http://localhost:3000 3
+      - name: Hydration check, third pass
+        if: always()
+        run: node /tmp/pw/store-hydration.mjs http://localhost:3000 3
