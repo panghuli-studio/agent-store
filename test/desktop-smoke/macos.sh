@@ -201,7 +201,9 @@ sleep 1
 keys 'keystroke "," using command down'
 sleep 3
 # The tab's AX role varies with WebKit, so it is found by its text and clicked by position.
-bounded 120 osascript - "${PID:-0}" >>"$OUT/osascript.log" 2>&1 <<'APPLESCRIPT' || log "the Agents tab was not clicked (osascript.log)"
+# Written to a file: bounded runs its command in the background, where stdin is /dev/null.
+CLICK=$(mktemp)
+cat >"$CLICK" <<'APPLESCRIPT'
 on run argv
   set pid to (item 1 of argv) as integer
   tell application "System Events" to tell (first process whose unix id is pid)
@@ -227,6 +229,7 @@ on run argv
   error "no Agents tab"
 end run
 APPLESCRIPT
+bounded 120 osascript "$CLICK" "${PID:-0}" >>"$OUT/osascript.log" 2>&1 || log "the Agents tab was not clicked (osascript.log)"
 sleep 8
 shot 06-settings-agents
 log "cli calls while the app ran (detection):"; while IFS= read -r l; do log "  $l"; done <"$CALLS"
