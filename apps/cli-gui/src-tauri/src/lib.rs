@@ -1,4 +1,6 @@
 mod credentials;
+#[cfg(target_os = "macos")]
+mod login_path;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -32,6 +34,8 @@ fn start_local_api(app: &tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  #[cfg(target_os = "macos")]
+  login_path::apply();
   let builder = tauri::Builder::default();
   // Must be the first plugin: on Windows and Linux every install link launches the
   // app again, and this hands the link to the running instance before a window opens.
