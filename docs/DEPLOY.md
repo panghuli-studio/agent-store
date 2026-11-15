@@ -16,7 +16,9 @@
 - **路径**：两个服务都读环境变量 `APP_DB_PATH`，默认 `/var/lib/agent-store/app.db`。
 - **建库和迁移**：只有 API 的 `bun src/migrate.ts` 会建库，它同时把库设为 WAL（写进文件，之后所有连接都是 WAL）。商店启动时找不到这个文件就报错退出，不会自己建表。
 - **单写者**：SQLite 同一时刻只有一个写者。两边每个连接都设 `busy_timeout=5000` 和 `foreign_keys=ON`，多语句的写事务都以 `BEGIN IMMEDIATE` 开始。抢不到写锁时等待最多 5 秒，而不是立刻报 `SQLITE_BUSY`。
-- **部署约束**：API 只能 `replicas: 1`，更新策略 `Recreate`，发版时有几秒不可用。API 和商店两个 Pod 必须调度到同一节点（按专用节点标签选，不用 `kubernetes.io/hostname`），挂同一个 local-path 卷。要多副本时改回 Postgres 或托管 SQLite（如 D1）。
+- **部署约束**：API 和商店各 `replicas: 1`，必须调度到同一节点（按专用节点标签选，不用 `kubernetes.io/hostname`），挂同一个 local-path 卷。要跨节点多副本时改回 Postgres 或托管 SQLite（如 D1）。
+- **发版不停机**：两个 Deployment 用 `RollingUpdate`（`maxSurge: 1`、`maxUnavailable: 0`），新 Pod 就绪后旧 Pod 才停，期间新旧 Pod 同时打开 `app.db`。这和 API、商店一直同时写这个文件是同一种情况，靠 SQLite 的文件锁排队，前提是所有 Pod 在同一节点的本地文件系统上。API 的 `/readyz` 在目录 `catalog.db` 打开之后才通过；API 收到 SIGTERM 后处理完在途请求再退出。
+- **迁移只增不删**：新 Pod 的迁移跑完时旧版本还在服务，所以一次发版里的迁移只能加表、加列、加索引，旧代码要能在新表结构上照常运行。删列、改名、改约束分两次发版：先发不再用它的代码，下一版再删。
 - **快照**：`bun src/snapshot.ts <输出路径>` 用 `VACUUM INTO` 生成一致快照，API 照常写入也不受影响；输出文件已存在时失败，成功退出 0、失败非 0。镜像里带 busybox 的 `tar`，`kubectl cp` 可用。
 - **备份**：netcup 主机上的 systemd 定时器每 6 小时 `kubectl exec` 跑一次快照写到 Pod 的 `/tmp/`，`kubectl cp` 出来压缩后存到 115（`/home/lsl/115/backups/agent-store/`），保留 14 天；115 没挂载时直接失败。定时器、脚本和恢复演练都在 home-lab 仓库。测试环境最多丢 6 小时数据。
 
@@ -30,7 +32,7 @@ bun src/snapshot.ts /tmp/app-snapshot.db
 1. PR 合入 `main`。
 2. `images` 工作流在 GitHub 托管的 runner 上构建两个镜像，推到 ghcr，tag 为 `main-<UTC 时间戳>`。
 3. home-lab 的 Flux 扫到新 tag，提交回 home-lab 并滚动更新。
-4. API Pod 启动前，初始化容器先跑 `bun src/migrate.ts`，建库（首次）并迁移 `app.db`。迁移失败时新版本不会开始接流量。
+4. API Pod 启动前，初始化容器先跑 `bun src/migrate.ts`，建库（首次）并迁移 `app.db`。迁移失败时新版本不会开始接流量，旧版本继续服务。
 
 商店的 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_SITE_URL` 在构建镜像时写进浏览器端代码，改地址要改 `.github/workflows/images.yml` 并重新构建。
 

@@ -1,9 +1,9 @@
 // CI only (store-screenshots.yml): the store's server-side API_URL. Forwards every
-// request to the test API, except /api/me/entitlements and /api/me/subscription:
-// the test API cannot verify the JWTs a CI store mints, so this answers from the
-// first word of the token's email instead (see ci-demo-session.mjs). /api/me/favorites
-// is kept in memory, the pro user starting with three, their summaries read from the
-// test API.
+// request to <upstream> (the job's catalog API), except /api/me/entitlements and
+// /api/me/subscription: that API cannot verify the JWTs a CI store mints, so this answers
+// from the first word of the token's email instead (see ci-demo-session.mjs).
+// /api/me/favorites is kept in memory, the pro user starting with three, their summaries
+// read from <upstream>.
 //
 // Usage: node scripts/ci-entitlements-proxy.mjs <upstream> <port>
 import { createServer } from 'node:http'
