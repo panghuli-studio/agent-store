@@ -483,6 +483,30 @@ describe('identity', () => {
     const done = await settle(s, 'typography')
     expect(done.listings.map((l) => l.key)).toEqual(['github:anthropics/skills/not-there'])
   })
+
+  // #187 (2026-11-15 15:13Z): 'obsidian cli skill' found hkuds/cli-anything's
+  // cli-anything-obsidian, which the catalog sync had published by then. Local search needs
+  // every term, so it did not list the skill, and the supplement dropped it as held.
+  test('a find the catalog holds but the local search missed is served from the catalog, without a scan', async () => {
+    const id = reader.skillId('anthropics/skills', 'frontend-design')!
+    expect(id).not.toBeNull()
+    expect(reader.list({ q: 'frontend design zzqx' }).resources).toEqual([])
+    const f = fakeFetch(searchRoutes({
+      clawhub: clawhubOk(clawhubHit('ivan', 'frontend-zzqx')),
+      skillsmp: skillsmpOk(skillsmpHit('anthropics/skills', 'frontend-design')),
+    }))
+    const s = supplement(f, { sources: [SOURCES.clawhub, SOURCES.skillsmp] })
+    const done = await settle(s, 'frontend design zzqx')
+    expect(done.status).toBe('found')
+    expect(done.resources.map((r) => r.id)).toEqual([id])
+    expect(done.resources[0]).toEqual(reader.summaries([id]).get(id)!)
+    expect(done.foundOn).toEqual({ [id]: ['skillsmp'] })
+    expect(done.listings.map((l) => l.key)).toEqual(['clawhub:ivan/frontend-zzqx'])
+    expect(calls(f, 'api.github.com')).toEqual([])
+    // Installable at once: the answer is kept for the usual day.
+    advance(23 * HOUR)
+    expect(s.lookup('frontend design zzqx', null).resources.map((r) => r.id)).toEqual([id])
+  })
 })
 
 // ── Persistence ──────────────────────────────────────────────────────────────

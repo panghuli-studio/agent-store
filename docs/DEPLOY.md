@@ -147,7 +147,7 @@ skills.sh 不在其中：它的 `robots.txt` 禁止 `/api/` 和 `/search`。
 
 - 每条结果必须有名称、身份字段，以及一个 `https` 且域名属于来源站点的页面地址，否则丢弃；名称、描述、作者去掉控制字符并截断（200 / 500 / 100 个字符）。
 - 身份沿用 `discovery.db` 的 `skill_key`：ClawHub 是 `clawhub:<owner>/<slug>`，SkillHub 转收录的 ClawHub 技能取同一个 `clawhub:` 键，SkillsMP 是 `github:<owner/repo>/<技能名>`。同一个键只展示一条；同名但作者不同、同一仓库的不同技能，键不同，各自保留。
-- `catalog.db` 里已经有的技能不重复返回。
+- `catalog.db` 里已经有的技能：出现在这次本地结果里的不重复返回；本地结果里没有的（本地搜索要求每个词都命中，`obsidian cli skill` 就搜不到 `cli-anything-obsidian`），直接用 `catalog.db` 里的条目作为可安装资源返回，不再读它的仓库。
 - 查询阶段只读文件（GitHub 的提交、目录树和 `SKILL.md`），不执行任何第三方安装命令或脚本。
 
 **哪些结果能安装**
