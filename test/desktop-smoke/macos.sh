@@ -194,7 +194,9 @@ PID=$(app_pids | head -1)
 } >"$OUT/gui-env.txt"
 while IFS= read -r l; do log "$l"; done <"$OUT/gui-env.txt"
 check "the app opened by Finder is running" '[ -n "$PID" ]'
-check "the app's PATH has ~/.npm-global/bin" 'envof "${PID:-0}" PATH | tr ":=" "\n\n" | grep -qx "$NPM_BIN"'
+# ps shows the environment a process was started with, so the app itself still shows launchd's
+# PATH after it changed its own; the sidecar it started shows the result.
+check "the sidecar's PATH has ~/.npm-global/bin" 'envof "$(pgrep -x aas | head -1)" PATH | tr ":=" "\n\n" | grep -qx "$NPM_BIN"'
 shot 05-finder-launch
 keys 'key code 53'
 sleep 1
@@ -229,7 +231,11 @@ on run argv
   error "no Agents tab"
 end run
 APPLESCRIPT
-bounded 120 osascript "$CLICK" "${PID:-0}" >>"$OUT/osascript.log" 2>&1 || log "the Agents tab was not clicked (osascript.log)"
+# The web view's tabs are not always in the AX tree; the fallback is where the tab is drawn on
+# the runner's 1024x768 screen (macos-06-settings-agents.png shows which one was opened).
+bounded 120 osascript "$CLICK" "${PID:-0}" >>"$OUT/osascript.log" 2>&1 \
+  || bounded 30 osascript -e 'tell application "System Events" to click at {238, 139}' >>"$OUT/osascript.log" 2>&1 \
+  || log "the Agents tab was not clicked (osascript.log)"
 sleep 8
 shot 06-settings-agents
 log "cli calls while the app ran (detection):"; while IFS= read -r l; do log "  $l"; done <"$CALLS"
