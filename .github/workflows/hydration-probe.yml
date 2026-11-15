@@ -50,46 +50,24 @@ jobs:
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
           npx playwright install --with-deps chromium
-      - name: Probe (slow network, patched react-dom)
-        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 2 patch slow
-  dev:
+      - name: Hydration check
+        run: cp scripts/store-hydration.mjs /tmp/pw/ && node /tmp/pw/store-hydration.mjs http://localhost:3000 3
+  lockfile:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter @as/store...
-      - run: pnpm --filter @as/types run build && pnpm --filter @as/sdk run build
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - run: |
+          printf 'patchedDependencies:\n  next@15.5.20: patches/next@15.5.20.patch\n' >> pnpm-workspace.yaml
+          pnpm install --lockfile-only
+          git diff --stat
+      - uses: actions/upload-artifact@v4
         with:
-          context: .
-          file: apps/api/Dockerfile
-          load: true
-          tags: as-api:ci
-          cache-from: type=gha,scope=api
-      - run: scripts/ci-catalog-api.sh as-api:ci 3001
-      - name: Start next dev
-        run: |
-          mkdir -p "$RUNNER_TEMP/db"
-          node scripts/ci-app-db.mjs "$RUNNER_TEMP/db/app.db"
-          cd apps/store
-          APP_DB_PATH="$RUNNER_TEMP/db/app.db" API_URL=http://localhost:3001 BETTER_AUTH_URL=http://localhost:3000 \
-            BETTER_AUTH_SECRET=ci-screenshots-secret-0123456789abcdef NEXT_TELEMETRY_DISABLED=1 \
-            nohup pnpm dev > "$RUNNER_TEMP/dev.log" 2>&1 &
-          for i in $(seq 90); do curl -fsS --max-time 60 -o /dev/null http://localhost:3000/pricing && break; sleep 2; done
-          for p in /pricing '/store?state=error' / /store /docs /client; do curl -sS --max-time 120 -o /dev/null "http://localhost:3000$p"; done
-          tail -20 "$RUNNER_TEMP/dev.log"
-      - name: Install Playwright
-        run: |
-          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
-          npx playwright install --with-deps chromium
-      - name: Probe (slow network)
-        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 2 '' slow
-      - if: always()
-        run: tail -100 "$RUNNER_TEMP/dev.log"
+          name: lockfile
+          path: |
+            pnpm-lock.yaml
+            pnpm-workspace.yaml

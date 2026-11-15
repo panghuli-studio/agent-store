@@ -1,0 +1,108 @@
+diff --git a/dist/compiled/react-dom/cjs/react-dom-client.development.js b/dist/compiled/react-dom/cjs/react-dom-client.development.js
+index 4376913..cc94df0 100644
+--- a/dist/compiled/react-dom/cjs/react-dom-client.development.js
++++ b/dist/compiled/react-dom/cjs/react-dom-client.development.js
+@@ -15776,6 +15776,13 @@
+           break;
+         case 5:
+           resetHooksOnUnwind(unitOfWork);
++          // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++          // cursor before replaying a host component that suspended while hydrating.
++          unitOfWork === hydrationParentFiber &&
++            (popToNextHostParent(unitOfWork),
++            isHydrating
++              ? null != unitOfWork.stateNode && (nextHydratableInstance = unitOfWork.stateNode)
++              : (isHydrating = !0));
+         default:
+           unwindInterruptedWork(current, unitOfWork),
+             (unitOfWork = workInProgress =
+diff --git a/dist/compiled/react-dom/cjs/react-dom-client.production.js b/dist/compiled/react-dom/cjs/react-dom-client.production.js
+index 755076a..f568c15 100644
+--- a/dist/compiled/react-dom/cjs/react-dom-client.production.js
++++ b/dist/compiled/react-dom/cjs/react-dom-client.production.js
+@@ -11210,6 +11210,13 @@ function replaySuspendedUnitOfWork(unitOfWork) {
+       break;
+     case 5:
+       resetHooksOnUnwind(next);
++      // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++      // cursor before replaying a host component that suspended while hydrating.
++      next === hydrationParentFiber &&
++        (popToNextHostParent(next),
++        isHydrating
++          ? null != next.stateNode && (nextHydratableInstance = next.stateNode)
++          : (isHydrating = !0));
+     default:
+       unwindInterruptedWork(current, next),
+         (next = workInProgress =
+diff --git a/dist/compiled/react-dom/cjs/react-dom-profiling.development.js b/dist/compiled/react-dom/cjs/react-dom-profiling.development.js
+index 43d0363..e426563 100644
+--- a/dist/compiled/react-dom/cjs/react-dom-profiling.development.js
++++ b/dist/compiled/react-dom/cjs/react-dom-profiling.development.js
+@@ -15784,6 +15784,13 @@
+           break;
+         case 5:
+           resetHooksOnUnwind(unitOfWork);
++          // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++          // cursor before replaying a host component that suspended while hydrating.
++          unitOfWork === hydrationParentFiber &&
++            (popToNextHostParent(unitOfWork),
++            isHydrating
++              ? null != unitOfWork.stateNode && (nextHydratableInstance = unitOfWork.stateNode)
++              : (isHydrating = !0));
+         default:
+           unwindInterruptedWork(current, unitOfWork),
+             (unitOfWork = workInProgress =
+diff --git a/dist/compiled/react-dom/cjs/react-dom-profiling.profiling.js b/dist/compiled/react-dom/cjs/react-dom-profiling.profiling.js
+index 85185b0..e8a2609 100644
+--- a/dist/compiled/react-dom/cjs/react-dom-profiling.profiling.js
++++ b/dist/compiled/react-dom/cjs/react-dom-profiling.profiling.js
+@@ -11814,6 +11814,13 @@ function replaySuspendedUnitOfWork(unitOfWork) {
+       break;
+     case 5:
+       resetHooksOnUnwind(next);
++      // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++      // cursor before replaying a host component that suspended while hydrating.
++      next === hydrationParentFiber &&
++        (popToNextHostParent(next),
++        isHydrating
++          ? null != next.stateNode && (nextHydratableInstance = next.stateNode)
++          : (isHydrating = !0));
+     default:
+       unwindInterruptedWork(current, next),
+         (next = workInProgress =
+diff --git a/dist/compiled/react-dom-experimental/cjs/react-dom-client.development.js b/dist/compiled/react-dom-experimental/cjs/react-dom-client.development.js
+index 0053084..2651fff 100644
+--- a/dist/compiled/react-dom-experimental/cjs/react-dom-client.development.js
++++ b/dist/compiled/react-dom-experimental/cjs/react-dom-client.development.js
+@@ -19477,6 +19477,13 @@
+           break;
+         case 5:
+           resetHooksOnUnwind(unitOfWork);
++          // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++          // cursor before replaying a host component that suspended while hydrating.
++          unitOfWork === hydrationParentFiber &&
++            (popToNextHostParent(unitOfWork),
++            isHydrating
++              ? null != unitOfWork.stateNode && (nextHydratableInstance = unitOfWork.stateNode)
++              : (isHydrating = !0));
+         default:
+           unwindInterruptedWork(current, unitOfWork),
+             (unitOfWork = workInProgress =
+diff --git a/dist/compiled/react-dom-experimental/cjs/react-dom-client.production.js b/dist/compiled/react-dom-experimental/cjs/react-dom-client.production.js
+index 1f7a795..a08dd58 100644
+--- a/dist/compiled/react-dom-experimental/cjs/react-dom-client.production.js
++++ b/dist/compiled/react-dom-experimental/cjs/react-dom-client.production.js
+@@ -13180,6 +13180,13 @@ function replaySuspendedUnitOfWork(unitOfWork) {
+       break;
+     case 5:
+       resetHooksOnUnwind(next);
++      // Backport of facebook/react#35494 (agent-store#214): restore the hydration
++      // cursor before replaying a host component that suspended while hydrating.
++      next === hydrationParentFiber &&
++        (popToNextHostParent(next),
++        isHydrating
++          ? null != next.stateNode && (nextHydratableInstance = next.stateNode)
++          : (isHydrating = !0));
+     default:
+       unwindInterruptedWork(current, next),
+         (next = workInProgress =
