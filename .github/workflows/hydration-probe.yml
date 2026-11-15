@@ -50,10 +50,11 @@ jobs:
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
           npx playwright install --with-deps chromium
-      - name: Probe (unpatched)
-        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 8
-      - name: Probe (patched react-dom)
-        run: node /tmp/pw/hydration-probe.mjs http://localhost:3000 8 patch
+      - name: Probe (slow network)
+        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 6 '' slow
+      - name: Probe (slow network, patched react-dom)
+        if: always()
+        run: node /tmp/pw/hydration-probe.mjs http://localhost:3000 6 patch slow
   dev:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -91,7 +92,7 @@ jobs:
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
           npx playwright install --with-deps chromium
-      - name: Probe
-        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 8
+      - name: Probe (slow network)
+        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 6 '' slow
       - if: always()
         run: tail -100 "$RUNNER_TEMP/dev.log"

@@ -1,8 +1,30 @@
 // TEMPORARY diagnostic for #214; removed before merge.
 // Usage: node hydration-probe.mjs <base> <rounds> [patch]
 import { chromium } from 'playwright'
+import http from 'node:http'
 
-const [base, rounds = '10', patch] = process.argv.slice(2)
+const [target, rounds = '10', patch, slow] = process.argv.slice(2)
+// With `slow`, documents pass through a proxy that holds each chunk back for a random
+// 0-400 ms, like a remote network does; static assets pass straight through.
+let base = target
+if (slow) {
+  const up = new URL(target)
+  const server = http.createServer((req, res) => {
+    const preq = http.request({ host: up.hostname, port: up.port, path: req.url, method: req.method, headers: { ...req.headers, host: up.host } }, async (pres) => {
+      res.writeHead(pres.statusCode, pres.headers)
+      const doc = (pres.headers['content-type'] || '').includes('text/html')
+      let chain = Promise.resolve()
+      pres.on('data', (c) => {
+        chain = chain.then(() => (doc ? new Promise((r) => setTimeout(r, Math.random() * 400)) : null)).then(() => res.write(c))
+      })
+      pres.on('end', () => chain.then(() => res.end()))
+    })
+    req.pipe(preq)
+  })
+  await new Promise((r) => server.listen(3100, r))
+  server.unref()
+  base = 'http://localhost:3100'
+}
 const PAGES = ['/pricing', '/store?state=error', '/', '/store', '/docs', '/client']
 const INJECT = (s) => {
   const m = s.match(/var (\w+)=null,(\w+)=null,(\w+)=!1,(\w+)=null,(\w+)=!1,(\w+)=Error\(\w+\(519\)\);function (\w+)\(e\)\{/)
