@@ -1,0 +1,97 @@
+name: hydration-probe
+# TEMPORARY diagnostic for #214; removed before merge.
+on:
+  push:
+    branches: [fix/store-hydration-418]
+permissions:
+  contents: read
+jobs:
+  prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TEST_URL: https://agent-store-test.panghuli.tech
+      BETTER_AUTH_SECRET: ci-screenshots-secret-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/store/Dockerfile
+          load: true
+          tags: store-shots:ci
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.TEST_URL }}
+            NEXT_PUBLIC_SITE_URL=${{ env.TEST_URL }}
+          cache-from: type=gha,scope=store
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          load: true
+          tags: as-api:ci
+          cache-from: type=gha,scope=api
+      - run: scripts/ci-catalog-api.sh as-api:ci 3001
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start the store
+        run: |
+          mkdir -m 777 "$RUNNER_TEMP/db"
+          node scripts/ci-app-db.mjs "$RUNNER_TEMP/db/app.db"
+          chmod 666 "$RUNNER_TEMP/db"/app.db*
+          docker run -d --name store -p 3000:3000 --add-host=host.docker.internal:host-gateway \
+            -e API_URL=http://host.docker.internal:3001 -e BETTER_AUTH_URL=http://localhost:3000 -e BETTER_AUTH_SECRET \
+            -v "$RUNNER_TEMP/db:/var/lib/agent-store" store-shots:ci
+          for i in $(seq 60); do curl -fsS --max-time 5 -o /dev/null http://localhost:3000/store && exit 0; sleep 2; done
+          docker logs store; exit 1
+      - name: Install Playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Probe (unpatched)
+        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 8
+      - name: Probe (patched react-dom)
+        run: node /tmp/pw/hydration-probe.mjs http://localhost:3000 8 patch
+  dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @as/store...
+      - run: pnpm --filter @as/types run build && pnpm --filter @as/sdk run build
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          load: true
+          tags: as-api:ci
+          cache-from: type=gha,scope=api
+      - run: scripts/ci-catalog-api.sh as-api:ci 3001
+      - name: Start next dev
+        run: |
+          mkdir -p "$RUNNER_TEMP/db"
+          node scripts/ci-app-db.mjs "$RUNNER_TEMP/db/app.db"
+          cd apps/store
+          APP_DB_PATH="$RUNNER_TEMP/db/app.db" API_URL=http://localhost:3001 BETTER_AUTH_URL=http://localhost:3000 \
+            BETTER_AUTH_SECRET=ci-screenshots-secret-0123456789abcdef NEXT_TELEMETRY_DISABLED=1 \
+            nohup pnpm dev > "$RUNNER_TEMP/dev.log" 2>&1 &
+          for i in $(seq 90); do curl -fsS --max-time 60 -o /dev/null http://localhost:3000/pricing && break; sleep 2; done
+          for p in /pricing '/store?state=error' / /store /docs /client; do curl -sS --max-time 120 -o /dev/null "http://localhost:3000$p"; done
+          tail -20 "$RUNNER_TEMP/dev.log"
+      - name: Install Playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Probe
+        run: cp scripts/hydration-probe.mjs /tmp/pw/ && node /tmp/pw/hydration-probe.mjs http://localhost:3000 8
+      - if: always()
+        run: tail -100 "$RUNNER_TEMP/dev.log"
