@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { bearer, deviceAuthorization, jwt } from 'better-auth/plugins'
 import { nextCookies } from 'better-auth/next-js'
 import { openAppDb } from '../app-db'
+import { RATE_LIMIT_RULES } from './rate-limit'
 import { syncGithubUsername } from './github-username'
 
 // Self-hosted Better Auth. Its tables (user, session, account, verification,
@@ -25,6 +26,7 @@ export function createAuth() {
     baseURL,
     secret: process.env.BETTER_AUTH_SECRET,
     database: db,
+    rateLimit: { customRules: RATE_LIMIT_RULES },
     databaseHooks: {
       account: {
         // create covers sign-up and linking GitHub to an existing user; update

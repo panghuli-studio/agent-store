@@ -14,6 +14,11 @@ test('GET / health check', async () => {
   expect(await res.json()).toEqual({ ok: true, service: 'as-api' })
 })
 
+test('responses carry the API time in Server-Timing', async () => {
+  const res = await app.fetch(new Request('http://localhost/healthz'))
+  expect(res.headers.get('server-timing')).toMatch(/^total;dur=\d+(\.\d+)?/)
+})
+
 test('GET /readyz is 503 until a catalog is open', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'readyz-'))
   try {
