@@ -67,12 +67,8 @@ check "the sidecar is universal" 'lipo -archs "$SIDECAR" | grep -q x86_64 && lip
 } >"$OUT/signature.txt" 2>&1
 log "spctl: $(spctl --assess --type execute "$APP" 2>&1 | tr '\n' ' ')"
 log "quarantine on the installed app: $(xattr -p com.apple.quarantine "$APP" 2>/dev/null || echo none)"
-# Known: the bundle itself is unsigned (#196). Turn this into a check once it is signed.
-if codesign --verify --deep --strict "$APP" 2>/dev/null; then
-  log "ok: the bundle signature verifies"
-else
-  log "KNOWN (#196): the bundle is not signed: $(codesign --verify --deep --strict "$APP" 2>&1 | tr '\n' ' ')"
-fi
+# The bundle is ad-hoc signed (#196): it must verify, or a quarantined download is reported as damaged.
+check "the bundle signature verifies" 'codesign --verify --deep --strict "$APP" 2>>"$OUT/signature.txt"'
 
 # What a user gets on double-clicking the downloaded copy. Escape dismisses the dialog
 # (its other button moves the app to the Trash).
