@@ -38,8 +38,14 @@ export interface SupplementConfig {
   unavailableTtlMs: number
   /** Lookups running at once, over all queries. */
   maxLookups: number
-  /** GitHub repos scanned per lookup, most relevant first (`reposByRelevance`); the rest wait for the catalog sync. */
+  /**
+   * Repos a lookup scans at once, most relevant first (`reposByRelevance`). A repo that
+   * gives no skill (too large, no skills, error) hands its turn to the next one; no new
+   * scan starts once this many repos gave skills.
+   */
   scanRepos: number
+  /** Most repos one lookup tries; the rest are tried by a later lookup or wait for the catalog sync. */
+  scanAttempts: number
   /** Of a repo with more skills than this, only the skills the finds name are read; the rest wait for the catalog sync. */
   scanMaxSkills: number
   scanTimeoutMs: number
@@ -62,6 +68,7 @@ export const SUPPLEMENT_DEFAULTS: SupplementConfig = {
   unavailableTtlMs: 30_000,
   maxLookups: 8,
   scanRepos: 2,
+  scanAttempts: 6,
   scanMaxSkills: 40,
   scanTimeoutMs: 10_000,
   scansPerHour: 20,
@@ -210,6 +217,8 @@ export class SearchSupplement {
   private readonly scans: RateLimiterMemory
   /** Until when GitHub asked not to be called (rate limit). */
   private githubCooldown = 0
+  /** Repos being scanned now, by any lookup. */
+  private readonly scanning = new Set<string>()
 
   constructor(private readonly o: SupplementOptions) {
     this.c = { ...SUPPLEMENT_DEFAULTS, ...o.config }
@@ -370,10 +379,13 @@ export class SearchSupplement {
     const stamp = now.toISOString()
     this.o.store.saveFinds(lists.flat(), stamp)
     const finds = mergeFinds(q, lists).filter((f) => !this.inCatalog(f.skillKey)).slice(0, this.c.maxResults)
-    const repos = await this.scan(key, q, finds)
+    const { repos, unfinished } = await this.scan(key, q, finds)
     const partial = lists.length < asked.length
     const status = finds.length ? 'found' : 'none'
-    const ttl = partial ? this.c.partialTtlMs : status === 'found' ? this.c.foundTtlMs : this.c.noneTtlMs
+    // Nothing installable yet while repos are left to scan: kept briefly, so asking again
+    // soon scans them instead of serving "listings only" for a day.
+    const waiting = unfinished && this.stored(q, finds.map((f) => f.skillKey)).resources.length === 0
+    const ttl = partial || waiting ? this.c.partialTtlMs : status === 'found' ? this.c.foundTtlMs : this.c.noneTtlMs
     this.o.store.saveLookup(key, { status, partial, skillKeys: finds.map((f) => f.skillKey) }, stamp, new Date(now.getTime() + ttl).toISOString())
     this.o.store.prune(now)
     this.log({ level: 'info', message: 'search supplement', key: key.slice(0, 12), sources: outcome, finds: finds.length, repos })
@@ -405,33 +417,59 @@ export class SearchSupplement {
   }
 
   /**
-   * Reads the GitHub repos the finds name, the most relevant few per lookup, so their
-   * skills can be served and installed before the next catalog build. Only files are
-   * read; nothing from a repo is run. Returns how each scan ended; one still running
-   * when the wait ends is `running`, and its outcome is logged when it ends.
+   * Reads the GitHub repos the finds name, most relevant first, so their skills can be
+   * served and installed before the next catalog build. Only files are read; nothing from
+   * a repo is run. Returns how each scan started so far ended (`running` for one still
+   * going when the wait ends; its outcome is logged when all end) and whether repos are
+   * left: a scan still running, or a due repo not tried for the attempt cap, the scan
+   * budget or a GitHub rate limit.
    */
-  private async scan(key: string, q: string, finds: ExternalFind[]): Promise<RepoScanOutcome[]> {
+  private async scan(key: string, q: string, finds: ExternalFind[]): Promise<{ repos: RepoScanOutcome[]; unfinished: boolean }> {
     const github = this.o.github
-    if (!github) return []
-    const wanted = reposByRelevance(q, finds)
+    if (!github) return { repos: [], unfinished: false }
+    const wanted = reposByRelevance(q, finds).filter((w) => !this.scanning.has(w.repo))
     const before = new Date(this.now().getTime() - this.c.rescanAfterMs).toISOString()
     const due = new Set(this.o.store.reposDue(wanted.map((w) => w.repo), before))
-    const picked = wanted.filter((w) => due.has(w.repo)).slice(0, this.c.scanRepos)
-    if (picked.length === 0) return []
-    const outcomes: RepoScanOutcome[] = picked.map((w) => ({ repo: w.repo, status: 'running' }))
-    const work = Promise.all(picked.map(async (w, i) => {
-      outcomes[i] = await this.scanOne(github, w)
-    })).catch((e) => {
-      this.log({ level: 'error', message: 'search supplement: repo scan failed', key: key.slice(0, 12), error: errorText(e) })
-    })
-    // A slow scan still stores its skills when it ends; the lookup just stops waiting for it.
+    const queue = wanted.filter((w) => due.has(w.repo))
+    if (queue.length === 0) return { repos: [], unfinished: false }
+    const outcomes: RepoScanOutcome[] = []
+    let gave = 0
+    let halted = false
+    let next = 0
+    const worker = async () => {
+      while (!halted && gave < this.c.scanRepos && next < queue.length && next < this.c.scanAttempts) {
+        const w = queue[next++]!
+        const at = outcomes.push({ repo: w.repo, status: 'running' }) - 1
+        this.scanning.add(w.repo)
+        try {
+          outcomes[at] = await this.scanOne(github, w)
+        } finally {
+          this.scanning.delete(w.repo)
+        }
+        const o = outcomes[at]!
+        if ((o.skills ?? 0) > 0) gave++
+        // Neither is marked as tried, and the next repo would fail the same way.
+        if (o.status === 'rate limited' || o.status === 'over budget') halted = true
+      }
+    }
+    let ended = false
+    const work = Promise.all(Array.from({ length: Math.min(this.c.scanRepos, queue.length) }, worker))
+      .catch((e) => {
+        this.log({ level: 'error', message: 'search supplement: repo scan failed', key: key.slice(0, 12), error: errorText(e) })
+      })
+      .finally(() => {
+        ended = true
+      })
+    // Scans go on after the lookup stops waiting; what they read is served when it is stored.
     const timer = wait(this.c.scanTimeoutMs)
-    const ended = await Promise.race([work.then(() => true), timer.done.then(() => false)])
+    await Promise.race([work, timer.done])
     timer.cancel()
     if (!ended) {
       void work.then(() => this.log({ level: 'info', message: 'search supplement: repo scans ended', key: key.slice(0, 12), repos: outcomes }))
     }
-    return outcomes.map((o) => ({ ...o }))
+    const tried = outcomes.filter((o) => o.status !== 'rate limited' && o.status !== 'over budget').length
+    const left = gave < this.c.scanRepos && tried < queue.length
+    return { repos: outcomes.map((o) => ({ ...o })), unfinished: !ended || left }
   }
 
   private async scanOne(github: Octokit, w: RepoToScan): Promise<RepoScanOutcome> {

@@ -660,6 +660,80 @@ describe('repo scans', () => {
     expect(repos['big/monorepo']).toMatchObject({ lastStatus: null, lastAttemptAt: null })
   })
 
+  // #187 (2026-11-15): the two most relevant repos for 'obsidian daily notes skill' were too
+  // large and the skills they were named for are no skill directories; the repos further
+  // down held installable ones but were never scanned, and the answer was kept for a day.
+  describe('repos that give no skill hand their turn on', () => {
+    const DECK_SHA = 'd'.repeat(40)
+    const CLAW_SHA = 'e'.repeat(40)
+    const CLI_SHA = 'f'.repeat(40)
+    const HERMES_SHA = '1'.repeat(40)
+    const CLI_OBSIDIAN = 'github:cli/anything/cli-obsidian'
+    const HERMES_OBSIDIAN = 'github:nous/hermes/obsidian'
+    const routes = () => fakeFetch(
+      repoRoutes('big/deck', DECK_SHA, ['misc-a', 'misc-b']),
+      repoRoutes('big/claw', CLAW_SHA, ['misc-c', 'misc-d']),
+      repoRoutes('cli/anything', CLI_SHA, ['cli-obsidian', 'cli-gimp']),
+      repoRoutes('nous/hermes', HERMES_SHA, ['obsidian', 'web']),
+      searchRoutes({
+        clawhub: clawhubOk(),
+        skillsmp: skillsmpOk(
+          skillsmpHit('big/deck', 'obsidian-daily-notes-deck'),
+          skillsmpHit('big/claw', 'obsidian-daily-notes-vault'),
+          skillsmpHit('cli/anything', 'cli-obsidian'),
+          skillsmpHit('nous/hermes', 'obsidian'),
+        ),
+      }),
+    )
+    const scannedRepos = (f: { calls: string[] }) =>
+      [...new Set(calls(f, 'api.github.com').map((c) => new URL(c).pathname.split('/').slice(2, 4).join('/')))].sort()
+
+    test('the lookup goes on down the list until repos give skills', async () => {
+      const f = routes()
+      const logs: Record<string, unknown>[] = []
+      const s = supplement(f, { sources: both, config: { scanMaxSkills: 1 }, log: (e) => logs.push(e) })
+      const done = await settle(s, 'obsidian daily notes')
+      expect(done.status).toBe('found')
+      expect(done.resources.map((r) => r.id).sort()).toEqual([CLI_OBSIDIAN, HERMES_OBSIDIAN])
+      expect(scannedRepos(f)).toEqual(['big/claw', 'big/deck', 'cli/anything', 'nous/hermes'])
+      const repos = logs.find((e) => e['message'] === 'search supplement')?.['repos'] as RepoScanOutcome[]
+      expect(Object.fromEntries(repos.map((r) => [r.repo, r.status]))).toEqual({
+        'big/deck': 'too large', 'big/claw': 'too large', 'cli/anything': 'named skills', 'nous/hermes': 'named skills',
+      })
+      // Installable skills found: the answer is kept for the usual day.
+      advance(23 * HOUR)
+      expect(s.lookup('obsidian daily notes', null).status).toBe('found')
+    })
+
+    test('with repos left over, nothing installable is kept briefly and asking again scans them', async () => {
+      const f = routes()
+      const s = supplement(f, { sources: both, config: { scanMaxSkills: 1, scanAttempts: 2 } })
+      const first = await settle(s, 'obsidian daily notes')
+      expect(first).toMatchObject({ status: 'found', resources: [] })
+      expect(scannedRepos(f)).toEqual(['big/claw', 'big/deck'])
+
+      advance(SUPPLEMENT_DEFAULTS.partialTtlMs - MINUTE)
+      expect(s.lookup('obsidian daily notes', null).status).toBe('found')
+      advance(2 * MINUTE)
+      const again = await settle(s, 'obsidian daily notes')
+      expect(again.resources.map((r) => r.id).sort()).toEqual([CLI_OBSIDIAN, HERMES_OBSIDIAN])
+      // The too-large repos were tried minutes ago and are not read again.
+      expect(calls(f, 'api.github.com').filter((c) => c.includes('/repos/big/'))).toHaveLength(4)
+    })
+
+    test('nothing left to scan and nothing installable: the answer is kept for the usual day', async () => {
+      const f = fakeFetch(
+        repoRoutes('big/deck', DECK_SHA, ['misc-a', 'misc-b']),
+        searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('big/deck', 'obsidian-daily-notes-deck')) }),
+      )
+      const s = supplement(f, { sources: both, config: { scanMaxSkills: 1 } })
+      expect((await settle(s, 'obsidian daily notes')).resources).toEqual([])
+      advance(23 * HOUR)
+      expect(s.lookup('obsidian daily notes', null).status).toBe('found')
+      expect(calls(f, 'skillsmp.com')).toHaveLength(1)
+    })
+  })
+
   test('a failing scan is logged with its error and no credentials; the repo waits before it is tried again', async () => {
     const broken: Route = (url) => (url.hostname === 'api.github.com' ? json({ message: 'Server Error' }, 502) : undefined)
     const answers = searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')) })
