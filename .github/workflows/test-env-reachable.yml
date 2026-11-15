@@ -1,0 +1,31 @@
+name: test-env-reachable
+
+# Whether the deployed test environment (home-lab, projects/agent-store/test) answers.
+# desktop-shots and store-screenshots read the catalog from an API they start themselves
+# (#211), so an outage or a deploy shows here and does not fail their product checks.
+# One request per endpoint, no retries: a failure here is the signal.
+on:
+  pull_request:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-env-reachable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TEST_URL: https://agent-store-test.panghuli.tech
+    steps:
+      - name: Catalog API, web store and sign-in answer
+        run: |
+          failed=0
+          for path in '/api/resources?limit=1' /store /api/auth/ok; do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$TEST_URL$path") || true
+            echo "$(date -u +%H:%M:%SZ) $status $TEST_URL$path"
+            [ "$status" = 200 ] || failed=1
+          done
+          exit $failed

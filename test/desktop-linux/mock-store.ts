@@ -1,7 +1,8 @@
 // A stand-in for the store's desktop sign-in (/api/auth/device/*, /token, /sign-out) and the
 // account endpoints the client calls (/api/me/entitlements, /api/me/favorites), for shots.sh
-// (#195). Everything else is forwarded to the live test store, so the catalog is real.
-// The deployed store may not have the device endpoints yet when a PR runs.
+// (#195). Everything else is forwarded to MOCK_UPSTREAM: in CI the API the job starts with the
+// published catalog (scripts/ci-catalog-api.sh), otherwise the live test store. The deployed
+// store may not have the device endpoints yet when a PR runs.
 //
 //   MOCK_PORT=18790 MOCK_STATE=/out/mock-store.json bun test/desktop-linux/mock-store.ts
 // POST /__revoke drops every session (a sign-out somewhere else); GET /__state shows the state;

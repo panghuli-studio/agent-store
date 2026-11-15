@@ -1,8 +1,10 @@
 name: store-screenshots
 
-# Builds the store image against the test API and screenshots the key pages at
-# 390/820/1440 px, zh and en, for PR review. The store has only a dark theme. Runs on
-# the runner, never on the shared host (see AGENTS.md).
+# Builds the store image and screenshots the key pages at 390/820/1440 px, zh and en,
+# for PR review. The store has only a dark theme. Its server-side catalog reads go to an
+# API this job starts from the same checkout with the published catalog
+# (scripts/ci-catalog-api.sh), not to the deployed test environment, whose deploys
+# failed these shots (#211). Runs on the runner, never on the shared host (see AGENTS.md).
 on:
   pull_request:
     paths:
@@ -12,6 +14,7 @@ on:
       - 'scripts/ci-demo-session.mjs'
       - 'scripts/ci-entitlements-proxy.mjs'
       - 'scripts/ci-local-api.mjs'
+      - 'scripts/ci-catalog-api.sh'
       - '.github/workflows/store-screenshots.yml'
   workflow_dispatch:
 
@@ -27,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
+      # Baked into the image as its public URL only; nothing the shots load calls it.
       TEST_URL: https://agent-store-test.panghuli.tech
       # Only signs the demo sessions of this throwaway container.
       BETTER_AUTH_SECRET: ci-screenshots-secret-0123456789abcdef
@@ -44,19 +48,28 @@ jobs:
             NEXT_PUBLIC_SITE_URL=${{ env.TEST_URL }}
           # Reads the cache images.yml writes; does not write its own.
           cache-from: type=gha,scope=store
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          load: true
+          tags: as-api:ci
+          cache-from: type=gha,scope=api
+      - name: Start the catalog API
+        run: scripts/ci-catalog-api.sh as-api:ci 3001
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       # The store refuses to start without app.db; an empty migrated one is enough, plus
       # two signed-in demo users for the dashboard. Server-side API calls go through a
-      # proxy that answers the demo users' plans and forwards the rest to the test API.
+      # proxy that answers the demo users' plans and forwards the rest to the catalog API.
       - name: Start the store
         run: |
           mkdir -m 777 "$RUNNER_TEMP/db"
           node scripts/ci-app-db.mjs "$RUNNER_TEMP/db/app.db"
           echo "SHOT_SESSIONS=$(node scripts/ci-demo-session.mjs "$RUNNER_TEMP/db/app.db")" >> "$GITHUB_ENV"
           chmod 666 "$RUNNER_TEMP/db"/app.db*
-          nohup node scripts/ci-entitlements-proxy.mjs "$TEST_URL" 4010 > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          nohup node scripts/ci-entitlements-proxy.mjs http://localhost:3001 4010 > "$RUNNER_TEMP/proxy.log" 2>&1 &
           # Stands in for a running desktop client, for the installed-state shots.
           nohup node scripts/ci-local-api.mjs http://localhost:3000 github:vercel-labs/skills/find-skills > "$RUNNER_TEMP/local-api.log" 2>&1 &
           docker run -d --name store -p 3000:3000 --add-host=host.docker.internal:host-gateway \
@@ -78,6 +91,7 @@ jobs:
         run: |
           docker logs store 2>&1 | tail -200
           tail -50 "$RUNNER_TEMP/proxy.log" || true
+          docker logs catalog-api 2>&1 | tail -50 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

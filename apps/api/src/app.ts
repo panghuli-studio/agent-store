@@ -53,11 +53,14 @@ function fail(c: Context<Env>, status: ContentfulStatusCode, message: string, ca
 
 app.get('/', (c) => c.json({ ok: true, service: 'as-api' }))
 
-// Liveness: the process answers. Readiness: it can also open app.db. Kept
-// apart so a database problem takes the pod out of the Service instead of
-// restarting it in a loop.
+// Liveness: the process answers. Readiness: it can serve the catalog and open
+// app.db. Kept apart so a database problem takes the pod out of the Service
+// instead of restarting it in a loop. The catalog is downloaded after start;
+// a pod that reported ready before it was open answered 503 on every catalog
+// route for its first seconds (#211).
 app.get('/healthz', (c) => c.json({ ok: true }))
 app.get('/readyz', async (c) => {
+  if (!catalogReader.ready) return c.json({ error: 'Catalog not loaded yet' }, 503)
   try {
     getDb(c.env).get(sql`select 1`)
     return c.json({ ok: true })
