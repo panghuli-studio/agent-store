@@ -144,28 +144,30 @@ retry_link "agent-store://install?id=$(enc "$MCP_ID")" 'grep -q "@upstash/contex
 check "a warm link installs context7 for Claude Code" 'grep -q "@upstash/context7-mcp" "$HOME/.claude.json" 2>/dev/null'
 stop_app
 
-# 6. CLIs that a terminal finds and launchd's PATH does not (#203): Claude Code and Codex from
-#    npm under ~/.local, with node and ~/.local/bin added to PATH in the login shell's profile,
-#    the way nvm or a manual install leaves a Mac. Each CLI is wrapped to log its calls.
+# 6. CLIs that a terminal finds and launchd's PATH does not (#203). Claude Code and Codex come
+#    from npm with prefix ~/.npm-global, and the login shell's profile puts that and node on
+#    PATH, the way a manual npm or nvm setup leaves a Mac. Neither directory is on the runner's
+#    own PATH. Each CLI is wrapped to log its calls. `open` from this script would hand the app
+#    the runner's PATH, so the app is opened by Finder, which has launchd's.
 USER_SHELL=$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}')
 log "login shell: ${USER_SHELL:-unknown}; launchctl getenv PATH: $(launchctl getenv PATH 2>&1 || true)"
+NPM_BIN="$HOME/.npm-global/bin"
 NODE_DIR=$(dirname "$(command -v node)")
-bounded 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit @anthropic-ai/claude-code @openai/codex >"$OUT/npm-install.log" 2>&1 \
+bounded 300 npm install -g --prefix "$HOME/.npm-global" --no-fund --no-audit @anthropic-ai/claude-code @openai/codex >"$OUT/npm-install.log" 2>&1 \
   || log "npm install of claude-code and codex failed (npm-install.log)"
 for f in .zprofile .bash_profile .profile; do
-  printf '\nexport PATH="$HOME/.local/bin:%s:$PATH"\n' "$NODE_DIR" >>"$HOME/$f"
+  printf '\nexport PATH="%s:%s:$PATH"\n' "$NPM_BIN" "$NODE_DIR" >>"$HOME/$f"
 done
 CALLS="$OUT/cli-calls.log"
-: >"$CALLS"
 for t in claude codex; do
-  bin="$HOME/.local/bin/$t"
+  bin="$NPM_BIN/$t"
   [ -e "$bin" ] || { log "no $bin after npm install"; continue; }
   real=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$bin")
   rm "$bin"
   printf '#!/bin/sh\nprintf "%%s %s %%s | PATH=%%s\\n" "$(date +%%T)" "$*" "$PATH" >>"%s"\nexec "%s" "$@"\n' "$t" "$CALLS" "$real" >"$bin"
   chmod +x "$bin"
 done
-check "a login shell finds claude in ~/.local/bin" '[ "$("${USER_SHELL:-/bin/zsh}" -l -c "command -v claude" 2>/dev/null | tail -1)" = "$HOME/.local/bin/claude" ]'
+check "a login shell finds claude in ~/.npm-global/bin" '[ "$("${USER_SHELL:-/bin/zsh}" -l -c "command -v claude" 2>/dev/null | tail -1)" = "$NPM_BIN/claude" ]'
 check "a login shell runs claude" '"${USER_SHELL:-/bin/zsh}" -l -c "claude --version" >>"$OUT/cli-version.log" 2>&1'
 check "a login shell runs codex" '"${USER_SHELL:-/bin/zsh}" -l -c "codex --version" >>"$OUT/cli-version.log" 2>&1'
 : >"$CALLS"
@@ -180,29 +182,44 @@ TOML
 cp "$HOME/.codex/config.toml" "$OUT/codex-config-before.toml"
 cp "$HOME/.claude.json" "$OUT/claude-json-before.json" 2>/dev/null
 
-open "$APP"
+envof() { ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n' | grep -E "^$2=" | head -1; }
+bounded 60 osascript -e "tell application \"Finder\" to open (POSIX file \"$APP\" as alias)" >>"$OUT/osascript.log" 2>&1 \
+  || log "Finder did not open the app (osascript.log)"
 sleep "$SETTLE"
 PID=$(app_pids | head -1)
-envof() { ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n' | grep -E "^$2=" | head -1; }
 {
+  echo "Finder pid $(pgrep -x Finder | head -1): $(envof "$(pgrep -x Finder | head -1)" PATH)"
   echo "app pid $PID: $(envof "$PID" PATH) $(envof "$PID" SHELL)"
   for p in $(pgrep -x aas); do echo "aas pid $p ($(ps -o command= -p "$p")): $(envof "$p" PATH)"; done
-} | tee "$OUT/gui-env.txt" | while IFS= read -r l; do log "$l"; done
-shot 05-relaunch
+} >"$OUT/gui-env.txt"
+while IFS= read -r l; do log "$l"; done <"$OUT/gui-env.txt"
+check "the app opened by Finder is running" '[ -n "$PID" ]'
+check "the app's PATH has ~/.npm-global/bin" 'envof "${PID:-0}" PATH | tr ":=" "\n\n" | grep -qx "$NPM_BIN"'
+shot 05-finder-launch
 keys 'key code 53'
 sleep 1
 keys 'keystroke "," using command down'
 sleep 3
-osascript - "${PID:-0}" >>"$OUT/osascript.log" 2>&1 <<'APPLESCRIPT' || log "the Agents tab was not clicked (osascript.log)"
+# The tab's AX role varies with WebKit, so it is found by its text and clicked by position.
+bounded 120 osascript - "${PID:-0}" >>"$OUT/osascript.log" 2>&1 <<'APPLESCRIPT' || log "the Agents tab was not clicked (osascript.log)"
 on run argv
   set pid to (item 1 of argv) as integer
   tell application "System Events" to tell (first process whose unix id is pid)
     set frontmost to true
     repeat with e in (entire contents of window 1)
       try
-        if role of e is in {"AXRadioButton", "AXButton", "AXTab"} and (name of e is in {"Agents", "Agent"} or description of e is in {"Agents", "Agent"}) then
-          click e
-          return "clicked the Agents tab"
+        set label to ""
+        try
+          set label to (value of e) as text
+        end try
+        if label is not in {"Agents", "Agent"} then set label to (name of e) as text
+        if label is in {"Agents", "Agent"} then
+          set {x, y} to position of e
+          set {w, h} to size of e
+          if x > 120 and y < 300 then
+            click at {x + w div 2, y + h div 2}
+            return "clicked Agents at " & x & "," & y
+          end if
         end if
       end try
     end repeat
@@ -213,7 +230,7 @@ APPLESCRIPT
 sleep 8
 shot 06-settings-agents
 log "cli calls while the app ran (detection):"; while IFS= read -r l; do log "  $l"; done <"$CALLS"
-check "the app launched by open runs claude --version (detection found it)" 'grep -q " claude --version" "$CALLS"'
+check "the app opened by Finder finds claude (detection ran claude --version)" 'grep -q " claude --version" "$CALLS"'
 
 MCP2_ID=mcp-registry:io.github.microsoft/playwright-mcp
 open "agent-store://install?id=$(enc "$MCP2_ID")"
@@ -232,7 +249,7 @@ check "playwright-mcp written to ~/.claude.json" 'grep -q "@playwright/mcp" "$HO
 check "playwright-mcp written to ~/.codex/config.toml" 'grep -q "@playwright/mcp" "$HOME/.codex/config.toml"'
 check "Claude Code's entry went through claude mcp add-json" 'grep -qE " claude mcp add-json --scope user .*@playwright/mcp" "$CALLS"'
 check "Codex's entry went through codex mcp add" 'grep -qE " codex mcp add .*@playwright/mcp" "$CALLS"'
-log "comments kept in config.toml: $(grep -c '^# smoke:\|# smoke: inline' "$HOME/.codex/config.toml") of 2"
+log "comments kept in config.toml: $(grep -c '# smoke:' "$HOME/.codex/config.toml") of 2"
 
 CRASHES=$(new_crash_reports)
 [ -n "$CRASHES" ] && { log "crash reports:"; log "$CRASHES"; while IFS= read -r f; do cp "$f" "$OUT/"; done <<<"$CRASHES"; }
