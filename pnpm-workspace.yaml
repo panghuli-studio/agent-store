@@ -7,3 +7,10 @@ allowBuilds:
   core-js: false
   esbuild: true
   sharp: true
+# Backports facebook/react#35494 into the React that Next 15.5 bundles (agent-store#214):
+# without it a host element that suspends while hydrating is replayed with the hydration
+# cursor one level too deep, and the page throws React #418. Next 16.4+ bundles a React
+# with the fix; drop this patch when upgrading to it. pnpm refuses to install if the
+# patch no longer applies, so a Next bump has to revisit it.
+patchedDependencies:
+  next@15.5.20: patches/next@15.5.20.patch

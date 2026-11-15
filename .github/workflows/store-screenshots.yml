@@ -10,6 +10,10 @@ on:
     paths:
       - 'apps/store/**'
       - 'scripts/store-screenshots.mjs'
+      - 'scripts/store-hydration.mjs'
+      - 'patches/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'scripts/ci-app-db.mjs'
       - 'scripts/ci-demo-session.mjs'
       - 'scripts/ci-entitlements-proxy.mjs'
@@ -86,6 +90,13 @@ jobs:
         run: |
           cp scripts/store-screenshots.mjs /tmp/pw/
           node /tmp/pw/store-screenshots.mjs http://localhost:3000 "$GITHUB_WORKSPACE/shots"
+      - name: Hydration check
+        # Fails on any hydration error over 72 loads behind a slow-network proxy (#214).
+        # Before the fix in patches/ about one load in five threw React #418 this way.
+        if: always()
+        run: |
+          cp scripts/store-hydration.mjs /tmp/pw/
+          node /tmp/pw/store-hydration.mjs http://localhost:3000 3
       - name: Store logs
         if: always()
         run: |
