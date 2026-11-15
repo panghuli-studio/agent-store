@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { requestId, type RequestIdVariables } from 'hono/request-id'
+import { timing, type TimingVariables } from 'hono/timing'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { sql } from 'drizzle-orm'
 import { verifyWebhook, type WebhookEvent, type WebhookEventData } from '@waffo/pancake-ts'
@@ -24,10 +25,13 @@ import {
 
 // Under Bun.serve, c.env is the Bun server object with none of these keys, so
 // getDb()/getWaffoClient()/getAuthUser() read process.env. Tests pass them in.
-type Env = { Bindings: WaffoEnv & DbEnv & AuthEnv; Variables: RequestIdVariables }
+type Env = { Bindings: WaffoEnv & DbEnv & AuthEnv; Variables: RequestIdVariables & TimingVariables }
 
 export const app = new Hono<Env>()
 
+// Keep first: its Server-Timing `total` must cover every later middleware and
+// handler, or it no longer separates the API's own time from the network (#216).
+app.use('*', timing())
 app.use('*', requestId())
 app.use('/api/*', cors())
 

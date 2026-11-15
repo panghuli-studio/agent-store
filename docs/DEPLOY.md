@@ -247,6 +247,7 @@ make db-reset  # 删掉本地 app.db 重建
 
 - `unit` 工作流：对改动影响到的包做类型检查、lint 和测试，API 也在里面。API 的测试文件逐个单独进程跑（`app.test.ts` 用 `mock.module` 替换了查询模块，Bun 的模块 mock 在同一进程里对所有文件生效），连库测试用临时目录里的 `app.db`，不需要数据库服务。`app-db.test.ts` 还会用 Node 跑商店的 `lib/app-db.ts`，和 API 同时写同一个库。
 - `images` 工作流：PR 上只构建不推送，能提前发现 Dockerfile 或 `next build` 的问题。PR 上还会冒烟：API 镜像里跑迁移、快照并确认有 `tar`；商店镜像先确认没有 `app.db` 时拒绝启动，再挂上迁移好的库启动，请求 `/api/auth/jwks` 让 Better Auth 写一行签名密钥。
+- `test-env-reachable` 工作流：每小时请求一次测试环境，确认 API、商店和登录都返回 200。同一工作流的 `latency-budget` 任务用 `scripts/latency-budget.sh` 对关键页面和接口各测 3 次，首字节和总耗时的中位数超过脚本里的预算就失败；PR 上只出报告不失败，因为耗时取决于部署和网络，不取决于 PR 的改动。API 的响应头 `Server-Timing: total;dur=` 是 API 自己的处理时间（毫秒），总耗时减去它就是网络和入口上花的时间。
 
 ## 桌面安装包分发
 

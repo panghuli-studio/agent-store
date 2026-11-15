@@ -4,6 +4,9 @@ name: test-env-reachable
 # desktop-shots and store-screenshots read the catalog from an API they start themselves
 # (#211), so an outage or a deploy shows here and does not fail their product checks.
 # One request per endpoint, no retries: a failure here is the signal.
+# latency-budget times the same environment (#216). It fails only on the schedule and
+# on a manual run: on a pull request it reports, since the time is spent in the
+# deployment and the network, not in the change under review.
 on:
   pull_request:
   schedule:
@@ -29,3 +32,13 @@ jobs:
             [ "$status" = 200 ] || failed=1
           done
           exit $failed
+
+  latency-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: First byte and total time within budget
+        env:
+          ENFORCE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+        run: scripts/latency-budget.sh https://agent-store-test.panghuli.tech
