@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Screenshots of the real desktop window (Tauri + WebKitGTK on Xvfb, with the
-# bundled aas sidecar behind IPC) against the live test catalog, for the
+# bundled aas sidecar behind IPC) against the catalog at AS_STORE_URL (the live test
+# catalog when unset), for the
 # catalog switch (#125), the skill library (#111), the window shell (#163), the Discover page,
 # install dialog and libraries (#164), the welcome, usage and settings pages (#165), projects (#166), the
 # loopback endpoint the web store asks (#181), the relay controls, connection test, provider order and
@@ -728,7 +729,7 @@ check "after the app quits the port is closed" '! listening'
 check "no aas __local-api process is left" '! pgrep -f -- "__local-api" >/dev/null'
 
 # 16. Sign-in and favorites (#195), against mock-store.ts: the store's device sign-in and
-#     account endpoints, the rest forwarded to the live test store. First without a Secret
+#     account endpoints, the rest forwarded to MOCK_UPSTREAM. First without a Secret
 #     Service (the sign-in lasts one run and says so), then with GNOME Keyring running.
 MOCK_PORT=18790
 MOCK=http://127.0.0.1:$MOCK_PORT

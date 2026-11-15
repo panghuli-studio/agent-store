@@ -105,9 +105,11 @@ for (const locale of LOCALES) {
     await context.addCookies([{ name: 'locale', value: locale, url: base }])
     const page = await context.newPage()
     const errors = []
-    page.on('pageerror', (e) => errors.push(e.message))
+    let current = ''
+    page.on('pageerror', (e) => errors.push(`${current}: ${e.message}`))
     for (const p of PAGES) {
       const file = `${out}/${p.name}-${width}-${locale}.png`
+      current = p.path
       try {
         const res = await page.goto(base + p.path, { waitUntil: p.waitUntil ?? 'networkidle', timeout: 60_000 })
         if (!res || res.status() !== (p.status ?? 200)) throw new Error(`HTTP ${res?.status()}`)
@@ -130,6 +132,7 @@ for (const locale of LOCALES) {
     for (const st of width > SHEET.maxWidth ? SORT_STATES : []) {
       const file = `${out}/${st.name}-${width}-${locale}.png`
       try {
+        current = SORT_PATH
         await page.goto(base + SORT_PATH, { waitUntil: 'networkidle', timeout: 60_000 })
         await page.evaluate(() => document.fonts.ready)
         await st.act(page)
@@ -143,6 +146,7 @@ for (const locale of LOCALES) {
     if (width <= SHEET.maxWidth) {
       const file = `${out}/${SHEET.name}-${width}-${locale}.png`
       try {
+        current = SHEET.path
         await page.goto(base + SHEET.path, { waitUntil: 'networkidle', timeout: 60_000 })
         await page.evaluate(() => document.fonts.ready)
         await page.locator(SHEET.button).first().click()
@@ -156,6 +160,7 @@ for (const locale of LOCALES) {
     if (width <= MENU.maxWidth) {
       const file = `${out}/${MENU.name}-${width}-${locale}.png`
       try {
+        current = MENU.path
         await page.goto(base + MENU.path, { waitUntil: 'networkidle', timeout: 60_000 })
         await page.evaluate(() => document.fonts.ready)
         await page.locator(MENU.button).click()
