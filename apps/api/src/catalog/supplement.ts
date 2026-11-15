@@ -261,14 +261,16 @@ export class SearchSupplement {
     if (this.o.sources.length === 0) return answer('disabled')
     // The sites list skills only.
     if ((kind && kind !== 'skill') || !lookupEligible(q, this.c)) return answer('not_needed')
-    const local = this.o.reader.list({ q, kind, limit: this.c.sample }).resources.map((r) => ({ name: r.name, key: r.origin.upstreamId }))
+    const localResults = this.o.reader.list({ q, kind, limit: this.c.sample }).resources
+    const local = localResults.map((r) => ({ name: r.name, key: r.origin.upstreamId }))
+    const shown = new Set(localResults.map((r) => r.id))
     const reason = fallbackTrigger(q, local, this.c.minResults)
     if (!reason) return answer('not_needed')
 
     const key = queryKey(q)
     const now = this.now()
     const cached = this.o.store.lookup(key, now.toISOString())
-    const extras = this.stored(q, cached?.skillKeys ?? [])
+    const extras = this.stored(q, cached?.skillKeys ?? [], shown)
     const found = extras.resources.length + extras.listings.length > 0
     if (this.running.has(key)) return answer('searching', { reason, ...extras, retryAfterSeconds: 2 })
     if (cached) return answer(found ? 'found' : 'none', { reason, ...extras, partial: cached.partial })
@@ -283,7 +285,7 @@ export class SearchSupplement {
     if (!fallbackTrigger(q, known, this.c.minResults)) return answer('found', { reason, ...extras })
     if (this.running.size >= this.c.maxLookups) return answer('unavailable', { reason, ...extras, retryAfterSeconds: 5 })
 
-    const job = this.run(q, key)
+    const job = this.run(q, key, shown)
       .catch((e) => {
         this.unavailable.set(key, this.now().getTime() + this.c.unavailableTtlMs)
         this.log({ level: 'error', message: 'search supplement failed', key: key.slice(0, 12), error: e instanceof Error ? e.message : String(e) })
@@ -311,21 +313,34 @@ export class SearchSupplement {
     return this.o.store.export(this.now().toISOString())
   }
 
-  /** Whether the catalog already holds the skill a key names; only GitHub skills can be in it. */
-  private inCatalog(skillKey: string): boolean {
+  /** The catalog id of the skill a key names, when the catalog holds it; only GitHub skills can be in it. */
+  private catalogId(skillKey: string): string | null {
     const m = /^github:([^/]+\/[^/]+)\/(.+)$/.exec(skillKey)
-    return m !== null && this.o.reader.skillId(m[1]!, m[2]!) !== null
+    return m ? this.o.reader.skillId(m[1]!, m[2]!) : null
   }
 
   /**
-   * Stored finds for a query: scanned skills as resources, the rest as listings. What
-   * the catalog holds by now is left out (it is in the local results) and dropped.
+   * Stored finds for a query: scanned skills and skills the catalog holds as resources,
+   * the rest as listings. Scanned skills the catalog holds by now are dropped from
+   * app.db. A catalog skill among the local results (`shown`) is left out; one the local
+   * search missed is served from the catalog, since local search needs every term and
+   * a query like 'obsidian cli skill' misses 'cli-anything-obsidian'.
    */
-  private stored(q: string, skillKeys: string[]): { resources: ResourceSummary[]; listings: ExternalListing[]; foundOn: Record<string, ExternalSite[]> } {
+  private stored(q: string, skillKeys: string[], shown: Set<string>): { resources: ResourceSummary[]; listings: ExternalListing[]; foundOn: Record<string, ExternalSite[]> } {
     const { resources, listings } = this.o.store.find(skillKeys, q.split(' '), this.c.maxResults)
     const published = resources.filter((r) => this.o.reader.has(r.summary.id))
     if (published.length) this.o.store.dropResources(published.map((r) => r.summary.id))
-    const kept = resources.filter((r) => !published.includes(r))
+    const held = new Map<string, string>()
+    for (const l of listings) {
+      const id = held.has(l.key) ? null : this.catalogId(l.key)
+      if (id) held.set(l.key, id)
+    }
+    const summaries = this.o.reader.summaries([...new Set(held.values())].filter((id) => !shown.has(id)))
+    const fromCatalog = [...held].flatMap(([skillKey, id]) => {
+      const summary = summaries.get(id)
+      return summary ? [{ skillKey, summary }] : []
+    })
+    const kept = [...resources.filter((r) => !published.includes(r)), ...fromCatalog]
     const order = new Map(skillKeys.map((k, i) => [k, i]))
     const byRelevance = <T>(items: T[], name: (t: T) => string, key: (t: T) => string): T[] =>
       items
@@ -341,7 +356,7 @@ export class SearchSupplement {
     }
     const byKey = new Map<string, FoundListing>()
     for (const l of listings) {
-      if (promoted.has(l.key) || this.inCatalog(l.key)) continue
+      if (promoted.has(l.key) || held.has(l.key)) continue
       const prev = byKey.get(l.key)
       // Of two sites listing one skill, the site the key names is its home.
       if (!prev || (!prev.key.startsWith(`${prev.site}:`) && l.key.startsWith(`${l.site}:`))) byKey.set(l.key, l)
@@ -362,7 +377,7 @@ export class SearchSupplement {
     }
   }
 
-  private async run(q: string, key: string): Promise<void> {
+  private async run(q: string, key: string, shown: Set<string>): Promise<void> {
     const asked = await Promise.all(this.o.sources.map((s) => this.ask(s, q)))
     const lists = asked.flatMap((a) => ('finds' in a ? [a.finds] : []))
     const outcome = Object.fromEntries(asked.map((a) => [a.source, 'finds' in a ? `ok ${a.finds.length}` : a.failed]))
@@ -378,13 +393,13 @@ export class SearchSupplement {
     }
     const stamp = now.toISOString()
     this.o.store.saveFinds(lists.flat(), stamp)
-    const finds = mergeFinds(q, lists).filter((f) => !this.inCatalog(f.skillKey)).slice(0, this.c.maxResults)
-    const { repos, unfinished } = await this.scan(key, q, finds)
+    const finds = mergeFinds(q, lists).slice(0, this.c.maxResults)
+    const { repos, unfinished } = await this.scan(key, q, finds.filter((f) => !this.catalogId(f.skillKey)))
     const partial = lists.length < asked.length
     const status = finds.length ? 'found' : 'none'
     // Nothing installable yet while repos are left to scan: kept briefly, so asking again
     // soon scans them instead of serving "listings only" for a day.
-    const waiting = unfinished && this.stored(q, finds.map((f) => f.skillKey)).resources.length === 0
+    const waiting = unfinished && this.stored(q, finds.map((f) => f.skillKey), shown).resources.length === 0
     const ttl = partial || waiting ? this.c.partialTtlMs : status === 'found' ? this.c.foundTtlMs : this.c.noneTtlMs
     this.o.store.saveLookup(key, { status, partial, skillKeys: finds.map((f) => f.skillKey) }, stamp, new Date(now.getTime() + ttl).toISOString())
     this.o.store.prune(now)
