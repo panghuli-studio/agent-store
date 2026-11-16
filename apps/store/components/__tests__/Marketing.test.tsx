@@ -116,16 +116,16 @@ test('the skill diagram links the library copy into each agent the switch enable
   expect(rows[1].getAttribute('data-on')).toBe('true')
 })
 
-test('the relay diagram shows the failover as a still when motion is reduced', () => {
+test('the relay diagram shows the failover as a still when motion is reduced', async () => {
   const original = window.matchMedia
   window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia
   try {
     const { container } = render(<RelayDemo />)
     expect(container.textContent).toContain('127.0.0.1:18780')
     expect(container.textContent).toContain('503')
-    expect(container.textContent).toContain('改发 供应商 B')
+    await waitFor(() => expect(container.textContent).toContain('改发 供应商 B'))
     fireEvent.click(screen.getByRole('switch', { name: '让第一家出错（演示）' }))
-    expect(container.textContent).not.toContain('503')
+    await waitFor(() => expect(container.textContent).not.toContain('503'))
   } finally {
     window.matchMedia = original
   }
