@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 RUN locale-gen en_US.UTF-8 zh_CN.UTF-8
 
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@12.15.0
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup PATH=/usr/local/cargo/bin:$PATH
 # Same version as apps/cli-gui/src-tauri/rust-toolchain.toml. It must also be the
 # default: build-sidecar.sh calls rustc from outside src-tauri.

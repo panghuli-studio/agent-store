@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl git ca-cer
 # bun (runs the CLI + fixture server + verify driver) and pnpm (workspace install).
 # Install bun to /usr/local so the non-root run user can reach it.
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@12.15.0
 
 # The two agent CLIs under test.
 RUN npm install -g @anthropic-ai/claude-code @openai/codex

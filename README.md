@@ -71,7 +71,7 @@ aas backup snapshots && aas backup restore <快照>
 
 ## 本地开发
 
-需要 Node 22、pnpm 11、Bun；改桌面客户端还要 Rust 和 [Tauri 的系统依赖](https://v2.tauri.app/start/prerequisites/)。
+需要 Node 22、pnpm 12、Bun；改桌面客户端还要 Rust 和 [Tauri 的系统依赖](https://v2.tauri.app/start/prerequisites/)。
 
 ```sh
 make setup     # 建本地 app.db 并迁移，生成 apps/store/.env.local

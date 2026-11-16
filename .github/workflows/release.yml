@@ -65,7 +65,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22 # pnpm 11.5 requires Node >= 22.13 (node:sqlite)
+          node-version: 22
           cache: pnpm
 
       - uses: oven-sh/setup-bun@v2

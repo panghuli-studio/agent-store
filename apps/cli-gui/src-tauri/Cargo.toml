@@ -49,3 +49,6 @@ keyring = { version = "3.6.3", features = ["windows-native"] }
 # so the blocking calls need no tokio runtime.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", features = ["async-secret-service", "async-io", "crypto-rust"] }
+
+[patch.crates-io]
+glib = { path = "vendor/glib" }

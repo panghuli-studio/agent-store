@@ -1,0 +1,8 @@
+[package]
+name = "glib-security-regression"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+glib = { path = "../../apps/cli-gui/src-tauri/vendor/glib" }
