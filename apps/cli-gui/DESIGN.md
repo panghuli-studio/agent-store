@@ -171,7 +171,7 @@ components:
 | 开关（每个 agent 一个） | `@radix-ui/react-switch`，打开时轨道用类别色 | `src/components/ui/switch.tsx` |
 | 筛选分段 | 一组 `aria-pressed` 按钮 | `src/components/ui/segmented.tsx` |
 | 下拉选择（含安装位置） | 原生 `<select>`，外框同输入框 | `src/components/ui/input.tsx` 的 `Select` |
-| 选择目录（添加项目、重新定位） | 系统的目录选择框，`@tauri-apps/plugin-dialog` 2.7 与 `tauri-plugin-dialog` 2.7（2.8 起要 Rust 1.90，`rust-toolchain.toml` 固定 1.85）；权限只开 `dialog:allow-open` | `src/lib/folderPicker.ts`、`src-tauri/capabilities/dialog.json` |
+| 选择目录（添加项目、重新定位） | 系统的目录选择框，`@tauri-apps/plugin-dialog` 2.7 与 `tauri-plugin-dialog` 2.7（工具链由 `src-tauri/rust-toolchain.toml` 固定）；权限只开 `dialog:allow-open` | `src/lib/folderPicker.ts`、`src-tauri/capabilities/dialog.json` |
 | 在文件管理器中显示 | `tauri-plugin-opener` 2.5 的 `revealItemInDir` 与 `@tauri-apps/plugin-opener` 2.5.5（2.6 起要 Rust 1.90）；权限只开 `opener:allow-reveal-item-in-dir`，不开打开文件和网址 | `src/lib/reveal.ts`、`src/components/ui/reveal.tsx`、`src-tauri/capabilities/opener.json` |
 | 多选（技能、MCP 列表） | 原生 `<input type="checkbox">`，颜色用 `accent-kind` | `src/components/ui/checkbox.tsx` |
 | 命令面板 | `cmdk`，放在 Radix 对话框里（带隐藏标题） | `src/components/shell/CommandPalette.tsx` |

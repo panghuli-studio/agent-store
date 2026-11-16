@@ -6,7 +6,7 @@ authors = ["phenix3443"]
 license = ""
 repository = ""
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,9 +26,7 @@ tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-deep-link = "2"
-# 2.8 needs Rust 1.90; rust-toolchain.toml pins 1.85.
 tauri-plugin-dialog = "~2.7"
-# 2.6 needs Rust 1.90.
 tauri-plugin-opener = "~2.5"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
@@ -38,7 +36,7 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 # The desktop session token goes to the OS credential store (src/credentials.rs, #195).
 # Without a platform feature keyring 3 silently uses an in-memory mock, so each target
-# names its store. keyring 4 needs Rust 1.88; rust-toolchain.toml pins 1.85.
+# names its store.
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }
 

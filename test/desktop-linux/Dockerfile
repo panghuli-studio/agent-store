@@ -23,7 +23,7 @@ RUN npm install -g pnpm@12.15.0
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup PATH=/usr/local/cargo/bin:$PATH
 # Same version as apps/cli-gui/src-tauri/rust-toolchain.toml. It must also be the
 # default: build-sidecar.sh calls rustc from outside src-tauri.
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.85.0
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.98.1
 # shots.sh: a stand-in file manager on D-Bus for 在文件管理器中显示, and the Claude Code CLI that
 # `enable --replace` needs to try the restore first. Kept off PATH; one step points AS_CLAUDE_BIN at it.
 RUN apt-get update && apt-get install -y --no-install-recommends python3-dbus python3-gi \
