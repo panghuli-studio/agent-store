@@ -50,8 +50,8 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: phenix3443
+          password: ${{ secrets.GHCR_PUBLISH_TOKEN }}
       - id: meta
         uses: docker/metadata-action@v6
         with:
