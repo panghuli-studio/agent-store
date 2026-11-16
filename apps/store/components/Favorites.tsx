@@ -64,7 +64,9 @@ export function FavoritesProvider({
   const [loading, setLoading] = useState(signedIn)
   const [message, setMessage] = useState<{ kind: Message; key: number } | null>(null)
   const idsRef = useRef(ids)
-  idsRef.current = ids
+  useEffect(() => {
+    idsRef.current = ids
+  }, [ids])
 
   const say = useCallback((kind: Message) => setMessage({ kind, key: Date.now() }), [])
 

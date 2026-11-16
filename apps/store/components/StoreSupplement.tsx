@@ -43,7 +43,7 @@ export function StoreSupplement({ query, sources, review }: StoreSupplementProps
     }
   }, [])
 
-  const ask = useCallback(async () => {
+  const ask = useCallback(async function ask() {
     setView('searching')
     const res = await lookupSupplement(query).catch(() => null)
     if (!alive.current) return
