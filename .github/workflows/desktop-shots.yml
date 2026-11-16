@@ -28,7 +28,8 @@ concurrency:
 jobs:
   shots:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A compiler upgrade invalidates build layers before the full native acceptance.
+    timeout-minutes: 75
     env:
       # The containers reach the API started on the runner through the host gateway.
       CATALOG: http://host.docker.internal:3001
