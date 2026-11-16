@@ -55,7 +55,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/agent-store-${{ matrix.name }}
+          images: ghcr.io/phenix3443/agent-store-${{ matrix.name }}
           tags: |
             type=raw,value=main-{{date 'YYYYMMDDHHmmss'}},enable={{is_default_branch}}
             type=sha,format=long
