@@ -88,7 +88,7 @@ jobs:
       - name: Build bundles
         uses: tauri-apps/tauri-action@v0
         env:
-          RUSTUP_TOOLCHAIN: stable
+          RUSTUP_TOOLCHAIN: 1.98.1
         with:
           projectPath: apps/cli-gui
           args: ${{ matrix.tauri-args }}
