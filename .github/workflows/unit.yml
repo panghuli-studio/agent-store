@@ -8,6 +8,8 @@ on:
     paths: &paths
       - 'apps/**'
       - 'packages/**'
+      - 'scripts/security/**'
+      - 'test/glib-security/**'
       - '!**/*.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
