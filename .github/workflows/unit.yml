@@ -8,6 +8,8 @@ on:
     paths: &paths
       - 'apps/**'
       - 'packages/**'
+      - 'scripts/security/**'
+      - 'test/glib-security/**'
       - '!**/*.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -49,3 +51,18 @@ jobs:
             filters+=(--filter=@as/api)
           fi
           pnpm turbo run type-check lint test "${filters[@]}" --continue
+
+  glib-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libglib2.0-dev
+      - run: python3 scripts/security/vendor-glib.py --check
+      - run: cargo test --manifest-path test/glib-security/Cargo.toml --locked --release

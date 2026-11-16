@@ -46,15 +46,14 @@ export default function DesktopDeviceApproval() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const userCode = params.get('user_code') ?? ''
-    if (!USER_CODE.test(userCode)) {
-      setStatus('invalid')
-      return
-    }
-    setCode(userCode)
-    markDesktopSeen()
-
     async function run() {
       const session = await authClient.getSession().catch(() => null)
+      if (!USER_CODE.test(userCode)) {
+        setStatus('invalid')
+        return
+      }
+      setCode(userCode)
+      markDesktopSeen()
       const user = session?.data?.user
       if (!user) {
         const provider = params.get('provider')

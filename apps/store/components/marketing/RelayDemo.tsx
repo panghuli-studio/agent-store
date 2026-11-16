@@ -38,34 +38,39 @@ export function RelayDemo() {
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const push = (line: Omit<LogLine, 'id'>) =>
       setLog((l) => [...l, { ...line, id: nextId.current++ }].slice(-3))
-    if (still) {
-      setPhase(fail ? 'second' : 'first')
-      setLog([])
-      if (fail) push({ agent: AGENTS[0], to: names[0], status: 503 })
-      push({ agent: AGENTS[0], to: fail ? t('retry', { name: names[1] }) : names[0], status: 200 })
-      return
-    }
-    let n = 0
     const timers: ReturnType<typeof setTimeout>[] = []
-    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms))
-    function round() {
-      const a = n++ % AGENTS.length
-      setAgent(a)
-      setPhase('request')
-      at(STEP_MS, () => {
-        setPhase('first')
-        push({ agent: AGENTS[a], to: names[0], status: fail ? 503 : 200 })
-      })
-      if (fail) {
-        at(STEP_MS * 2, () => {
-          setPhase('second')
-          push({ agent: AGENTS[a], to: t('retry', { name: names[1] }), status: 200 })
-        })
+    const frame = requestAnimationFrame(() => {
+      if (still) {
+        setPhase(fail ? 'second' : 'first')
+        setLog([])
+        if (fail) push({ agent: AGENTS[0], to: names[0], status: 503 })
+        push({ agent: AGENTS[0], to: fail ? t('retry', { name: names[1] }) : names[0], status: 200 })
+        return
       }
-      at(STEP_MS * (fail ? 2 : 1) + 1600, round)
+      let n = 0
+      const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms))
+      function round() {
+        const a = n++ % AGENTS.length
+        setAgent(a)
+        setPhase('request')
+        at(STEP_MS, () => {
+          setPhase('first')
+          push({ agent: AGENTS[a], to: names[0], status: fail ? 503 : 200 })
+        })
+        if (fail) {
+          at(STEP_MS * 2, () => {
+            setPhase('second')
+            push({ agent: AGENTS[a], to: t('retry', { name: names[1] }), status: 200 })
+          })
+        }
+        at(STEP_MS * (fail ? 2 : 1) + 1600, round)
+      }
+      round()
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      timers.forEach(clearTimeout)
     }
-    round()
-    return () => timers.forEach(clearTimeout)
     // names and t only change with the locale, which reloads the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fail])
