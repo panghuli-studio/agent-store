@@ -94,6 +94,7 @@ test('connecting checks the form, passes the token only as an RPC argument, then
   renderTab()
   fireEvent.click(await screen.findByRole('button', { name: '连接仓库…' }))
   const dialog = await screen.findByRole('dialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Git 地址' }))
   const remote = within(dialog).getByLabelText('仓库地址')
   await waitFor(() => expect(document.activeElement === remote).toBe(true))
 
@@ -140,6 +141,7 @@ test('a connected remote that already holds items offers restore first when rest
   fireEvent.click(await screen.findByRole('button', { name: /从备份恢复/ }))
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByText('连接存有备份的仓库')).toBeInTheDocument()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Git 地址' }))
   fireEvent.change(within(dialog).getByLabelText('仓库地址'), { target: { value: '/srv/backup.git' } })
   fireEvent.click(within(dialog).getByRole('button', { name: '连接' }))
   expect(await within(dialog).findByText('仓库里已有 4 项备份。')).toBeInTheDocument()
@@ -158,6 +160,7 @@ test('connect failures say what to do next', async () => {
   renderTab()
   fireEvent.click(await screen.findByRole('button', { name: '连接仓库…' }))
   const dialog = await screen.findByRole('dialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Git 地址' }))
   fireEvent.change(within(dialog).getByLabelText('仓库地址'), { target: { value: 'https://git.example/me/b.git' } })
   fireEvent.click(within(dialog).getByRole('button', { name: '连接' }))
   expect(await within(dialog).findByText(/认证失败，远端拒绝了访问/)).toBeInTheDocument()

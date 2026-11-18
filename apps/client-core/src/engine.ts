@@ -12,7 +12,7 @@ import type {
   ProjectSummary, ProjectUninstallOptions, ProjectUninstallResult, BatchOperation, BatchOutcome,
   AccessToken, DeviceAuthorization, DevicePoll, FavoriteEntry,
   BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupHistoryEntry, BackupResolveResult,
-  BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult,
+  BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll,
   AgentDetection, ImportApplyResult, ImportRecordSummary, ImportScan, ImportScanOptions, ImportUndoOptions, ImportUndoResult,
 } from '@as/types'
 import { StoreClient } from '@as/sdk'
@@ -27,6 +27,7 @@ import { createAdapters, mcpCliFallbackNote, type KindAdapter } from './adapters
 import { ProjectService } from './projects/service'
 import { AccountService } from './account'
 import { BackupService } from './backup/service'
+import type { GitHubOptions } from './backup/github'
 import { checkUpdates as _checkUpdates, latestFor } from './updater/index'
 import { duplicateProviderConnection, readProviderConnection } from './config/provider'
 import { claudeUsesRelay } from './config/claude'
@@ -79,6 +80,8 @@ export interface EngineOptions {
   authUrl?: string
   /** Skills larger than this stay out of the backup; 100 MB by default. */
   backupMaxItemBytes?: number
+  /** GitHub sign-in for the backup: the OAuth app's client id and, for tests, other endpoints. */
+  github?: GitHubOptions
   /** The shared skills directory Codex also reads; ~/.agents/skills by default. */
   agentsSkillsDir?: string
 }
@@ -113,6 +116,7 @@ export class EngineImpl implements Engine {
       engine: this,
       engineFor: catalog => new EngineImpl(this.paths, storeUrl, { ...options, catalog }),
       maxItemBytes: options.backupMaxItemBytes,
+      github: options.github,
     })
     this.adapters = createAdapters({
       paths: this.paths,
@@ -716,6 +720,22 @@ export class EngineImpl implements Engine {
 
   connectBackup(options: BackupConnectOptions): Promise<BackupConnectResult> {
     return this.backup.connect(options)
+  }
+
+  startGitHubBackupSignIn(): Promise<GitHubDeviceCode> {
+    return this.backup.startGitHubSignIn()
+  }
+
+  pollGitHubBackupSignIn(deviceCode: string): Promise<GitHubSignInPoll> {
+    return this.backup.pollGitHubSignIn(deviceCode)
+  }
+
+  connectGitHubBackup(options: GitHubConnectOptions): Promise<BackupConnectResult> {
+    return this.backup.connectGitHub(options)
+  }
+
+  cancelGitHubBackupSignIn(): Promise<void> {
+    return this.backup.cancelGitHubSignIn()
   }
 
   backupNow(): Promise<BackupSyncResult> {

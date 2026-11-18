@@ -165,7 +165,7 @@ function StatusRows({ status }: { status: BackupStatus }) {
         sub={
           <>
             <Mono>{status.remote}</Mono> · {fmt(t('bk.branchOf'), status.branch ?? '')}
-            {status.hasCredentials && <> · {t('bk.tokenStored')}</>}
+            {status.github ? <> · {fmt(t('bk.ghAccount'), status.github.login)}</> : status.hasCredentials && <> · {t('bk.tokenStored')}</>}
           </>
         }
       >

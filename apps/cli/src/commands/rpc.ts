@@ -1,6 +1,6 @@
 import { errorFields, resolvePaths, runDoctor } from '@as/client-core'
 import type { ImportScanOptions, ImportUndoOptions } from '@as/types'
-import type { Engine, BackupConflictChoice, BackupConnectOptions, AddProjectOptions, BatchOperation, ProjectInstallOptions, ProjectUninstallOptions, BudgetConfig, EnableOptions, DisableOptions, InstallOptions, ListOptions, ResourceKind, SearchOptions, ToolTarget, UsageSummaryOptions } from '@as/types'
+import type { Engine, BackupConflictChoice, BackupConnectOptions, GitHubConnectOptions, AddProjectOptions, BatchOperation, ProjectInstallOptions, ProjectUninstallOptions, BudgetConfig, EnableOptions, DisableOptions, InstallOptions, ListOptions, ResourceKind, SearchOptions, ToolTarget, UsageSummaryOptions } from '@as/types'
 
 type RpcHandler = (engine: Engine, args: unknown[]) => Promise<unknown>
 
@@ -66,6 +66,10 @@ const RPC_METHODS: Record<string, RpcHandler> = {
   unsetProjectEnv: (e, a) => e.unsetProjectEnv(a[0] as string, a[1] as string),
   getBackupStatus: (e, a) => e.getBackupStatus(a[0] as { fetch?: boolean } | undefined),
   connectBackup: (e, a) => e.connectBackup(a[0] as BackupConnectOptions),
+  startGitHubBackupSignIn: (e) => e.startGitHubBackupSignIn(),
+  pollGitHubBackupSignIn: (e, a) => e.pollGitHubBackupSignIn(a[0] as string),
+  connectGitHubBackup: (e, a) => e.connectGitHubBackup(a[0] as GitHubConnectOptions),
+  cancelGitHubBackupSignIn: (e) => e.cancelGitHubBackupSignIn(),
   backupNow: (e) => e.backupNow(),
   pullBackup: (e) => e.pullBackup(),
   resolveBackupConflict: (e, a) => e.resolveBackupConflict(a[0] as string, a[1] as BackupConflictChoice),
