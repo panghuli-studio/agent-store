@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { InstalledItem } from '@as/types'
+import { callRpc } from '../../lib/rpc'
 import { useT } from '../../i18n'
 import { useAppState } from '../../state/AppState'
 import { useBackup } from '../../state/Backup'
@@ -9,8 +11,25 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 /** Runs before import, so restoring can only start with an empty library. */
 export function FirstLaunchBackup() {
   const t = useT()
-  const { shellDialog, setShellDialog, setNavView, setSettingsTab } = useAppState()
+  const { shellDialog, setShellDialog, setNavView, setSettingsTab, installDialogOpen, installedVersion } = useAppState()
   const backup = useBackup()
+  const [eligible, setEligible] = useState(false)
+  const pending = shellDialog === 'first-run-backup'
+  useEffect(() => {
+    let active = true
+    setEligible(false)
+    if (pending && !installDialogOpen) {
+      // A link can install something while the first-launch choice is deferred.
+      void callRpc<InstalledItem[]>('list').then(items => {
+        if (!active) return
+        if (items.length) setShellDialog('welcome')
+        else setEligible(true)
+      }, () => {
+        if (active) setShellDialog('welcome')
+      })
+    }
+    return () => { active = false }
+  }, [pending, installDialogOpen, installedVersion, setShellDialog])
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -38,8 +57,8 @@ export function FirstLaunchBackup() {
   }
 
   return (
-    <Dialog open={shellDialog === 'first-run-backup'} onOpenChange={(open) => !open && void choose(false)}>
-      <DialogContent width="md" aria-describedby="first-launch-description" onEscapeKeyDown={(e) => busy && e.preventDefault()} onPointerDownOutside={(e) => busy && e.preventDefault()}>
+    <Dialog open={pending && eligible && !installDialogOpen} onOpenChange={(open) => !open && void choose(false)}>
+      <DialogContent width="md" onCloseAutoFocus={(e) => e.preventDefault()} aria-describedby="first-launch-description" onEscapeKeyDown={(e) => busy && e.preventDefault()} onPointerDownOutside={(e) => busy && e.preventDefault()}>
         <DialogBody>
           <DialogTitle>{t('bk.firstTitle')}</DialogTitle>
           <DialogDescription id="first-launch-description" className="mt-2">{t('bk.firstDescription')}</DialogDescription>

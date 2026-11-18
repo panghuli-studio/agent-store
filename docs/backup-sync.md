@@ -301,6 +301,7 @@ reaches argv. Errors carry `code` (class name) and `reason`:
 | `export-failed` | an item could not be exported |
 | `apply-failed` | a remote change could not be applied |
 | `git-missing` | `git` is not on the PATH |
+| `rollback-failed` | first-launch restore could not be fully undone; connection and snapshots are retained for recovery |
 | `busy` | another backup operation holds `~/.agent-store/backup.lock` |
 | `auth-failed` | git: the remote refused the credentials or SSH key (`GitError`) |
 | `host-key` | git: the SSH host key is not trusted yet (`GitError`) |
@@ -318,7 +319,8 @@ Before the welcome/import guide, a client with no welcome record and an empty in
 start fresh or restore from an existing backup. The choice is saved in the app data directory's
 `agent-store-cli/first-launch-backup.json` before continuing. Start fresh continues the welcome guide; Escape does the
 same. An existing library, a saved choice or a completed welcome guide suppresses the question. Settings › Backup &
-sync remains available later.
+sync remains available later. An install dialog opened by an app or website link defers this choice; the library is
+checked again when the install dialog closes.
 
 Restore opens the existing connection form in Settings › Backup & sync. Connecting alone changes no installed items;
 Cancel leaves the library empty. After connecting, “Later” disconnects this first-launch connection. Confirming pull

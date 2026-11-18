@@ -17,8 +17,8 @@ afterEach(async () => { cleanup(); await settleRpc(); mock.restore() })
 
 function Probe() {
   useFirstRunWelcome()
-  const { shellDialog } = useAppState()
-  return <span data-testid="shell">{shellDialog}</span>
+  const { shellDialog, installDialogOpen, setInstallDialogOpen } = useAppState()
+  return <><span data-testid="shell">{shellDialog}</span><button data-testid="toggle-install" onClick={() => setInstallDialogOpen(!installDialogOpen)}>Install dialog</button></>
 }
 
 function setup(options: { saved?: Record<string, unknown>; installed?: unknown[]; failPull?: boolean; rollbackFails?: boolean; failSave?: boolean } = {}) {
@@ -120,4 +120,18 @@ test('incomplete rollback keeps the connection and recovery snapshots when closi
   fireEvent.click(screen.getByRole('button', { name: '稍后' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(calls.some(([m]) => m === 'disconnectBackup')).toBe(false)
+})
+
+
+test('defers the first-launch prompt during an install and rechecks the library afterwards', async () => {
+  const options = { installed: [] as unknown[] }
+  const { saved } = setup(options)
+  expect(await screen.findByRole('button', { name: '从空白开始' })).toBeInTheDocument()
+  fireEvent.click(screen.getByTestId('toggle-install'))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(saved['first-launch-backup']).toBeUndefined()
+  options.installed.push({ slug: 'from-link' })
+  fireEvent.click(screen.getByTestId('toggle-install'))
+  await waitFor(() => expect(screen.getByTestId('shell').textContent).toBe('welcome'))
+  expect(screen.queryByRole('button', { name: '从空白开始' })).toBeNull()
 })
