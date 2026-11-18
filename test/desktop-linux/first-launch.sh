@@ -23,6 +23,16 @@ mkdir -p "$TASK_HOME/source"
 (cd /work && bun test/desktop-linux/seed-old-home.ts "$TASK_HOME/source")
 HOME="$TASK_HOME/source" /usr/bin/aas backup connect "$REMOTE" >"$OUT/seed.log" 2>&1
 HOME="$TASK_HOME/source" /usr/bin/aas backup now >>"$OUT/seed.log" 2>&1
+# WebKitGTK on a GPU-less Xvfb can keep an old frame after a portal changes.
+# Generate a real expose/resize before capturing; never modify the PNG afterwards.
+shot() {
+  xdotool windowsize "$win" 1198 758
+  sleep 1
+  xdotool windowsize "$win" 1200 760
+  xdotool mousemove 600 380
+  sleep 2
+  import -window "$win" "$OUT/$1.png"
+}
 stop_app() { kill "$app_pid"; wait "$app_pid" || true; app_pid=''; sleep 2; }
 for lang in zh en; do
   export HOME=$TASK_HOME/$lang
@@ -34,18 +44,19 @@ for lang in zh en; do
   sleep 15
   win=$(xdotool search --onlyvisible --name 'Agent Store' | head -1)
   xdotool windowfocus --sync "$win"
-  import -window "$win" "$OUT/$lang-choice.png"
+  xdotool mousemove 600 380
+  shot "$lang-choice"
   # The default focus is Start fresh; restore is the next button.
   xdotool key Tab Return
-  sleep 3
-  import -window "$win" "$OUT/$lang-connect.png"
+  sleep 8
+  shot "$lang-connect"
   xdotool type --clearmodifiers "$REMOTE"
   xdotool key Return
   sleep 12
-  import -window "$win" "$OUT/$lang-confirm.png"
+  shot "$lang-confirm"
   xdotool key Return
   sleep 15
-  import -window "$win" "$OUT/$lang-restored.png"
+  shot "$lang-restored"
   test -f "$HOME/.agent-store/skills/legacy-skill/SKILL.md"
   test -n "$(find "$XDG_DATA_HOME" -path '*/agent-store-cli/first-launch-backup.json' -print -quit)"
   stop_app
@@ -53,7 +64,7 @@ for lang in zh en; do
   app_pid=$!
   sleep 12
   win=$(xdotool search --onlyvisible --name 'Agent Store' | head -1)
-  import -window "$win" "$OUT/$lang-relaunch.png"
+  shot "$lang-relaunch"
   stop_app
   echo "ok: $lang restored from first launch and relaunched" >>"$OUT/result.txt"
 done
