@@ -96,6 +96,40 @@ export class RepoTooLargeError extends Error {
   }
 }
 
+/**
+ * The trees of skill directories at a commit, each fetched on its own (`<commit>:<dir>`),
+ * with paths made repo-relative. A directory that is gone, is no directory, has its own
+ * tree truncated or holds no SKILL.md is left out.
+ */
+async function readSkillDirs(
+  github: Octokit,
+  owner: string,
+  repo: string,
+  commit: string,
+  dirs: string[],
+): Promise<Array<{ dir: string; sha: string; entries: TreeEntry[] }>> {
+  const read = await pMap(
+    dirs,
+    async (dir) => {
+      try {
+        const { data } = await github.git.getTree({ owner, repo, tree_sha: `${commit}:${dir}`, recursive: 'true' })
+        const inner = data.tree as TreeEntry[]
+        if (data.truncated || !inner.some((e) => e.type === 'blob' && e.path === 'SKILL.md')) return null
+        const entries: TreeEntry[] = [
+          { path: dir, mode: '040000', type: 'tree', sha: data.sha },
+          ...inner.map((e) => ({ ...e, path: `${dir}/${e.path}` })),
+        ]
+        return { dir, sha: data.sha, entries }
+      } catch (e) {
+        if (isRecord(e) && (e['status'] === 404 || e['status'] === 422)) return null
+        throw e
+      }
+    },
+    { concurrency: 4 },
+  )
+  return read.filter((d): d is { dir: string; sha: string; entries: TreeEntry[] } => d !== null)
+}
+
 export interface RepoScan {
   /** Lowercase `owner/repo`; the reconcile scope. */
   scope: string
@@ -114,10 +148,11 @@ export async function scanRepo(
   installs: Map<string, number>,
   /**
    * maxSkills: over it, throw RepoTooLargeError before any SKILL.md is downloaded, unless
-   * `named` (lowercase directory names) picks at most that many skill directories: then
-   * only those are read.
+   * `named` (lowercase directory names) or `dirs` (directory paths) pick at most that many
+   * skill directories: then only those are read. A repo whose git tree GitHub truncates is
+   * read through the `dirs` alone, each one's own tree fetched; without them it throws.
    */
-  limits: { maxSkills?: number; named?: Set<string> } = {},
+  limits: { maxSkills?: number; named?: Set<string>; dirs?: Set<string> } = {},
 ): Promise<RepoScan> {
   const [owner, repo] = fullName.split('/') as [string, string]
   const scope = fullName.toLowerCase()
@@ -128,18 +163,31 @@ export async function scanRepo(
   const commit = { sha: String(sha).trim() }
   if (!/^[0-9a-f]{40}$/.test(commit.sha)) throw new Error(`${fullName}: could not resolve HEAD`)
   const { data: tree } = await github.git.getTree({ owner, repo, tree_sha: commit.sha, recursive: 'true' })
-  if (tree.truncated) throw new Error(`${fullName}: git tree is truncated (too large to scan)`)
-  const entries = tree.tree as TreeEntry[]
+  let entries = tree.tree as TreeEntry[]
   const treeShaOf = new Map(entries.filter((e) => e.type === 'tree').map((e) => [e.path, e.sha]))
   treeShaOf.set('', tree.sha)
 
-  let dirs = findSkillDirs(entries)
+  let dirs: string[]
   let subset = false
-  if (limits.maxSkills !== undefined && dirs.length > limits.maxSkills) {
-    const named = dirs.filter((d) => limits.named?.has((d.split('/').pop() ?? '').toLowerCase()))
-    if (named.length === 0 || named.length > limits.maxSkills) throw new RepoTooLargeError(fullName, dirs.length, limits.maxSkills)
-    dirs = named
+  if (tree.truncated) {
+    const truncated = `${fullName}: git tree is truncated (too large to scan)`
+    const wanted = [...(limits.dirs ?? [])].filter((d) => d !== '')
+    if (wanted.length === 0) throw new Error(truncated)
+    if (limits.maxSkills !== undefined && wanted.length > limits.maxSkills) throw new RepoTooLargeError(fullName, wanted.length, limits.maxSkills)
+    const read = await readSkillDirs(github, owner, repo, commit.sha, wanted)
+    if (read.length === 0) throw new Error(`${truncated}; no directory the finds name holds a SKILL.md`)
+    entries = read.flatMap((d) => d.entries)
+    for (const d of read) treeShaOf.set(d.dir, d.sha)
+    dirs = read.map((d) => d.dir)
     subset = true
+  } else {
+    dirs = findSkillDirs(entries)
+    if (limits.maxSkills !== undefined && dirs.length > limits.maxSkills) {
+      const named = dirs.filter((d) => limits.dirs?.has(d) || limits.named?.has((d.split('/').pop() ?? '').toLowerCase()))
+      if (named.length === 0 || named.length > limits.maxSkills) throw new RepoTooLargeError(fullName, dirs.length, limits.maxSkills)
+      dirs = named
+      subset = true
+    }
   }
   if (dirs.length > MAX_SKILLS_PER_REPO) {
     skipped['repo has too many skills'] = dirs.length - MAX_SKILLS_PER_REPO
