@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import * as persistence from '../../state/LocalPersistence'
 import * as rpc from '../../lib/rpc'
+import * as external from '../../lib/openExternal'
 import { AppStateProvider, useAppState } from '../../state/AppState'
 import { BackupProvider } from '../../state/Backup'
 import { TerminalLogProvider } from '../../state/TerminalLog'
@@ -35,6 +36,10 @@ function setup(options: { saved?: Record<string, unknown>; installed?: unknown[]
     if (method === 'list') return options.installed ?? []
     if (method === 'getBackupStatus') return { ...empty, connected }
     if (method === 'connectBackup') { connected = true; return { status: { ...empty, connected }, remoteItems: 1 } }
+    if (method === 'startGitHubBackupSignIn') return { deviceCode: 'dc-1', userCode: 'WDJBMJHT', verificationUri: 'https://github.com/login/device', expiresIn: 900, interval: 0 }
+    if (method === 'pollGitHubBackupSignIn') return { status: 'approved', login: 'me', existing: { fullName: 'me/agent-store-backup', private: true, url: 'https://github.com/me/agent-store-backup' }, create: 'me/agent-store-backup-2' }
+    if (method === 'connectGitHubBackup') { connected = true; return { status: { ...empty, connected }, remoteItems: 1 } }
+    if (method === 'cancelGitHubBackupSignIn') return null
     if (method === 'disconnectBackup') { connected = false; return }
     if (method === 'pullBackup') {
       if (options.rollbackFails) throw new rpc.RpcError('rollback incomplete', 'BackupRollbackError', { reason: 'rollback-failed' })
@@ -76,6 +81,7 @@ test('a persistence failure keeps the choice open', async () => {
 
 async function connect() {
   fireEvent.click(await screen.findByRole('button', { name: '从备份恢复…' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Git 地址' }))
   const remote = await screen.findByLabelText('仓库地址')
   fireEvent.change(remote, { target: { value: '/tmp/backup.git' } })
   fireEvent.submit(remote.closest('form')!)
@@ -98,6 +104,19 @@ test('first-launch restore pulls with rollback enabled and never offers upload',
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(calls.find(([m]) => m === 'pullBackup')?.[1]).toEqual([{ firstRun: true }])
   expect(calls.some(([m]) => m === 'backupNow')).toBe(false)
+})
+
+test('first-launch restore through GitHub sign-in connects the earlier backup, then pulls with rollback', async () => {
+  spyOn(external, 'openExternal').mockImplementation(async () => {})
+  const { calls } = setup()
+  fireEvent.click(await screen.findByRole('button', { name: '从备份恢复…' }))
+  fireEvent.click(await screen.findByRole('button', { name: '用 GitHub 登录' }))
+  fireEvent.click(await screen.findByRole('button', { name: '连接这个备份' }))
+  fireEvent.click(await screen.findByRole('button', { name: '恢复到本机' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.find(([m]) => m === 'connectGitHubBackup')?.[1]).toEqual([{ repo: 'existing' }])
+  expect(calls.find(([m]) => m === 'pullBackup')?.[1]).toEqual([{ firstRun: true }])
+  expect(calls.some(([m]) => m === 'backupNow' || m === 'disconnectBackup')).toBe(false)
 })
 
 test('a failed pull stays visible with an explicit way to cancel and disconnect', async () => {
