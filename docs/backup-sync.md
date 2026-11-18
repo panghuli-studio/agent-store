@@ -320,7 +320,7 @@ start fresh or restore from an existing backup. The choice is saved in the app d
 `agent-store-cli/first-launch-backup.json` before continuing. Start fresh continues the welcome guide; Escape does the
 same. An existing library, a saved choice or a completed welcome guide suppresses the question. Settings › Backup &
 sync remains available later. An install dialog opened by an app or website link defers this choice; the library is
-checked again when the install dialog closes.
+checked again when the install dialog closes. The welcome/import guide also pauses during an install, retaining its step.
 
 Restore opens the existing connection form in Settings › Backup & sync. Connecting alone changes no installed items;
 Cancel leaves the library empty. After connecting, “Later” disconnects this first-launch connection. Confirming pull

@@ -232,10 +232,11 @@ export function defaultSelection(scan: ImportScan): string[] {
 /** The first-run guide: detected agents, then what the user already has, then the result. Nothing is written until 导入所选. */
 export function WelcomeDialog() {
   const { t, locale } = useI18n()
-  const { shellDialog, setShellDialog, bumpInstalledVersion } = useAppState()
+  const { shellDialog, setShellDialog, bumpInstalledVersion, installDialogOpen } = useAppState()
   const navigate = useNavigate()
   const primaryRef = useRef<HTMLButtonElement>(null)
-  const open = shellDialog === 'welcome' || shellDialog === 'import'
+  const requested = shellDialog === 'welcome' || shellDialog === 'import'
+  const open = requested && !installDialogOpen
   const [step, setStep] = useState<Step>('agents')
   const [agents, setAgents] = useState<Load<AgentDetection[]>>({ status: 'loading' })
   const [scan, setScan] = useState<Load<ImportScan>>({ status: 'loading' })
@@ -266,7 +267,7 @@ export function WelcomeDialog() {
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!requested) return
     setStep(shellDialog === 'import' ? 'import' : 'agents')
     setApplied(null)
     setUndone(false)
@@ -274,7 +275,7 @@ export function WelcomeDialog() {
     setMatchCatalog(false)
     detect()
     rescan(false)
-  }, [open])
+  }, [requested])
 
   useEffect(() => {
     if (open) primaryRef.current?.focus()
@@ -472,6 +473,7 @@ export function WelcomeDialog() {
     <Dialog open={open} onOpenChange={(next) => !next && finish(false)}>
       <DialogContent
         width="wide"
+        onCloseAutoFocus={(e) => installDialogOpen && e.preventDefault()}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           primaryRef.current?.focus()
