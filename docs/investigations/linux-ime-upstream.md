@@ -1,6 +1,6 @@
 # Upstream report draft: GTK3/X11 native child window stops presenting WebKit content
 
-Status: prepared for a maintainer to submit to WebKitGTK; **not submitted**. Tracking in this repository: #239. No production workaround is shipped by PR #240.
+Status: 上游报告已备好、待所有者提交 (prepared for the owner to submit to WebKitGTK; **not submitted**). Tracking in this repository: #239. No production workaround is shipped by PR #240.
 
 ## Environment
 
@@ -8,16 +8,51 @@ Ubuntu 22.04 GitHub Actions VM; Xvfb with GNOME Shell/Mutter 42.9 as X11 window/
 
 ## Reproducer
 
-Install Python GI with its Cairo converter, GTK3 and WebKit2 4.1 typelibs. Run [probe.py](../../test/desktop-linux/ime/probe.py) in an existing GNOME X11 session:
+Use a clean **Ubuntu 22.04 GNOME desktop**, logged into “Ubuntu on Xorg” (select it at the login screen). Open Terminal inside that session as the desktop user, not via SSH or as root. No Agent Store installation, repository checkout, IME configuration, Node, Rust, or application build is needed. Internet access and sudo are needed only for setup. The software-rendering flag below matches the measured VM; this is not a claim about physical GPU rendering.
+
+Install the dependencies and download the exact standalone probe used for the recorded measurements:
 
 ```sh
-LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 LIBGL_ALWAYS_SOFTWARE=1 \
-  GDK_BACKEND=x11 GTK_IM_MODULE=gtk-im-context-simple \
-  IME_FORCE_NATIVE=late WEBKIT_DISABLE_COMPOSITING_MODE=1 \
-  python3 test/desktop-linux/ime/probe.py
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends curl python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 fonts-noto-cjk locales
+sudo locale-gen zh_CN.UTF-8
+mkdir -p "$HOME/webkit-native-probe"
+cd "$HOME/webkit-native-probe"
+curl --fail --location https://raw.githubusercontent.com/panghuli-studio/agent-store/7af939915a325553b2b44fd70f5fd950306309c6/test/desktop-linux/ime/probe.py --output probe.py
+printf 'Session: %s; display: %s\n' "$XDG_SESSION_TYPE" "$DISPLAY"
+dpkg-query -W gnome-shell mutter-common libgtk-3-0 libwebkit2gtk-4.1-0 python3-gi python3-gi-cairo | tee versions.txt
 ```
 
-This uses neither XIM nor an IME server: after the first page frame, the test calls `view.get_window().ensure_native()` once, two seconds after startup. The visible counter then stays on its old value although JavaScript messages report increasing values and input continues to reach the page. Compare with `IME_FORCE_NATIVE=none`, which keeps presenting. Using the normal renderer without either disable flag also keeps presenting after native promotion. Separately setting `WEBKIT_DISABLE_DMABUF_RENDERER=1` reproduces the stale presentation too.
+The session must print `x11` and a nonempty display. If it says `wayland`, log out and select the Xorg session before continuing. Package repositories may now supply newer versions than those recorded above; keep `versions.txt` with any new result rather than assuming an identical outcome.
+
+Paste this function and run the four cases sequentially in the same terminal. Each window closes after 15 seconds. Do not resize, minimize, obscure or take a WebKit-internal snapshot of the window during observation; these can change repaint behavior. The terminal logs remain in the current directory.
+
+```sh
+run_probe() {
+  case_name="$1"
+  shift
+  timeout --kill-after=3s 15s env \
+    -u WEBKIT_DISABLE_COMPOSITING_MODE -u WEBKIT_DISABLE_DMABUF_RENDERER \
+    LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 LIBGL_ALWAYS_SOFTWARE=1 \
+    GDK_BACKEND=x11 GTK_IM_MODULE=gtk-im-context-simple \
+    "$@" /usr/bin/python3 probe.py > "$case_name.log" 2>&1
+  probe_status=$?
+  if [ "$probe_status" -ne 124 ]; then
+    printf 'Unexpected exit %s; inspect %s.log\n' "$probe_status" "$case_name"
+    return 1
+  fi
+}
+run_probe control IME_FORCE_NATIVE=none WEBKIT_DISABLE_COMPOSITING_MODE=1
+run_probe native-default IME_FORCE_NATIVE=late
+run_probe native-compositing-off IME_FORCE_NATIVE=late WEBKIT_DISABLE_COMPOSITING_MODE=1
+run_probe native-dmabuf-off IME_FORCE_NATIVE=late WEBKIT_DISABLE_DMABUF_RENDERER=1
+```
+
+Exit 124 is the intentional timeout, not a failed reproduction. For each case, observe the visible `FRAME` counter around seconds 7–11, and optionally type ASCII into the input. The `page` entries in each log contain JavaScript `ticks` and input events; `GTK_WINDOW` entries contain the native-window state and GTK draw count. If the program exits early, inspect its log before interpreting any result.
+
+**Expected:** all four windows keep presenting an increasing counter; typing remains visible after native promotion. **Actual on the recorded stack:** `control` and `native-default` keep presenting. In the two disabled-renderer cases, the visible counter stays stale (FRAME 1 in the measured late-promotion case), while logged ticks advance through 7, 9 and 11, and GTK draw callbacks continue. `native` changes from false to true approximately two seconds after startup. A newer stack that keeps presenting in all cases is a useful non-reproduction; record the versions and rendering environment.
+
+This uses neither XIM nor an IME server: after the first page frame, the test calls `view.get_window().ensure_native()` once, two seconds after startup. The two controls distinguish the rendering flag alone from native promotion with the normal renderer. The function explicitly clears inherited rendering-disable flags before each case.
 
 With an IBus XIM server configured, the user-facing trigger is focusing a field with `GTK_IM_MODULE=xim` instead of directly calling `ensure_native()`. The XIM context obtains the client XID and the GDK child becomes native; the native page can stay white or keep a frame from before focus. An IBus GTK module and a simple input context provide controls. Simple is an ASCII diagnostic control, not a proposed CJK workaround.
 
@@ -25,7 +60,7 @@ The same presentation discrepancy occurs in the Agent Store 0.4.0 published `.de
 
 ## Evidence and interpretation
 
-The [investigation record](linux-ime.md) contains the runs, versions, per-case native/DOM measurements, CJK coverage and the limits of each run. Native screenshots are captured before any WebDriver DOM read, with no window resizing or WebKit snapshot used to force a repaint. OCR misses are retained as unknowns; a blank/stale window is checked directly against the original PNG.
+The [investigation record](https://github.com/panghuli-studio/agent-store/blob/superagent/407906d27456fddd4ee7eb3bb81b649e/docs/investigations/linux-ime.md) contains the runs, versions, per-case native/DOM measurements, CJK coverage and the limits of each run. Native screenshots are captured before any WebDriver DOM read, with no window resizing or WebKit snapshot used to force a repaint. OCR misses are retained as unknowns; a blank/stale window is checked directly against the original PNG.
 
 Relevant source chain:
 
