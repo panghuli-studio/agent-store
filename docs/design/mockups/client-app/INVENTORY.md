@@ -2,6 +2,8 @@
 
 盘点基于 `agent-store` 仓库 main 分支 `f7deb96`（2026-11-13 阅读源码得出，没有运行客户端）。路径相对仓库根目录。
 
+2026-11-18 校正：下文除明确更新的同步条目外仍是上述提交的历史盘点，不代表 main 当前缺少这些功能。C 光谱改版及项目功能已落地；当前交互请同时查阅应用源码和 `apps/cli-gui/DESIGN.md`。
+
 「把握」一列的口径：
 
 - **CI 实跑**：`test/desktop-linux/shots.sh` 在真实窗口里走过这条流程，并在磁盘上核对结果。
@@ -128,7 +130,7 @@
 | 「检查更新」检查的是**已安装资源**有没有新版本，不是客户端自身 | `SettingsModal.tsx` `checkForUpdates` → RPC `checkUpdates` | 有单测 |
 | 客户端自动更新 | Tauri 配置里没有 updater 插件 | 没有 |
 | 数据位置 `~/.agent-store/`（`AS_HOME` 可改） | `paths.ts`、`docs/global-skills-mcp.md` §0 | CI 实跑 |
-| 跨设备同步 | 只出现在账号页的说明文字里 | 没有（规划中） |
+| 备份与跨设备同步（2026-11-18 更新） | `apps/cli-gui/src/components/backup/BackupTab.tsx`、`apps/client-core/src/backup/`、`docs/backup-sync.md`；设置 → 备份与同步，使用用户自己的 Git 仓库，密钥与项目不进入备份 | 仅代码（本次未运行） |
 
 ## 十一、首次启动与迁移
 
@@ -168,4 +170,4 @@
 - 测试连接：代码里没有。
 - 亮色主题：代码里有，原型只做深色。
 - 客户端自动更新：代码里没有，原型只给「去官网下载」。
-- 跨设备同步：只作为设置里一条禁用的「即将推出」。
+- 完整备份与同步流程未在静态原型中模拟；main 已实现，设置中显示说明和文档链接，不再标为「即将推出」。

@@ -170,7 +170,7 @@ window.AS_I18N = {
   'set.lang': ['界面语言', 'Language'], 'set.lang.d': ['切换后立即生效。', 'Takes effect immediately.'],
   'set.theme': ['主题', 'Theme'], 'set.theme.d': ['当前只提供深色主题。', 'Dark is the only theme for now.'], 'set.theme.dark': ['深色', 'Dark'],
   'set.keys': ['键盘快捷键', 'Keyboard shortcuts'], 'set.keys.d': ['命令面板、导航和列表操作。', 'Command palette, navigation and lists.'], 'set.keys.btn': ['查看', 'View'],
-  'set.sync': ['跨设备同步', 'Sync across devices'], 'set.sync.d': ['在多台电脑之间同步已安装的技能、MCP 和供应商配置。', 'Keep installed skills, MCP servers and provider configs in step across your computers.'],
+  'set.sync': ['备份与同步', 'Backup and sync'], 'set.sync.d': ['已在客户端设置中提供：备份到自己的 Git 仓库并跨设备同步。密钥与项目不进入备份；此原型未模拟完整流程。', 'Available in client settings: back up to your own Git repository and sync across devices. Secrets and projects are excluded; this prototype does not simulate the full flow.'],
   'set.welcome': ['首次启动引导', 'First-run guide'], 'set.welcome.d': ['重新查看 agent 检测和迁移结果。', 'See agent detection and the migration report again.'], 'set.welcome.btn': ['重新走一遍', 'Run it again'],
   'set.agents.h': ['Agent Store 管理这些 agent 的技能和 MCP 配置', 'Agent Store manages skills and MCP config for these agents'],
   'set.agents.paths': ['技能 {0} · MCP {1} · 可用环境变量 {2} 改位置', 'Skills {0} · MCP {1} · relocate with {2}'], 'set.agents.missing': ['没有找到 {0}。安装后点「重新检测」。', "{0} wasn't found. Install it, then choose Detect again."], 'set.agents.how': ['安装说明', 'How to install'],

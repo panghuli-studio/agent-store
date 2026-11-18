@@ -31,7 +31,7 @@
 <script>
 (function () {
   var $ = AS.$, esc = AS.esc, PL = AS_PLANS, S = AS.S, K = AS.K, root = $('#dash'), asked = false, dlg = $('#subDlg');
-  var TABS = [['account', 'user'], ['subscription', 'card'], ['favorites', 'heart'], ['sync', 'sync']];
+  var TABS = [['account', 'user'], ['subscription', 'card'], ['favorites', 'heart']];
   dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
   function status(plan) {
     var p = PL.periods[plan.period], v = { d: PL.nextDate(plan), price: p.text, per: t('pr.per.' + plan.period) };
@@ -57,7 +57,7 @@
         return '<div class="list-item" data-kind="' + d.kind + '">' + AS.tile(d.kind) + '<div><b>' + esc(d.name) + '</b><small><span class="kind">' + K(d.kind) + '</span>　' + AS.author(d) + '</small></div><div class="acts"><a class="btn btn-ghost btn-sm" href="' + AS.href(d.id) + '" data-quick="' + esc(d.id) + '">' + t('db.fav.view') + '</a><button class="btn btn-ghost btn-sm" type="button" data-unfav="' + esc(d.id) + '">' + t('db.fav.remove') + '</button></div></div>';
       }).join('') : '<div class="empty"><b>' + t('db.fav.empty.h') + '</b>' + t('db.fav.empty.p') + '<br><br><a class="btn btn-pri btn-sm" href="store.html">' + t('go.store') + '</a></div>') + '</section>';
     }
-    return '<section class="card"><h2>' + t('db.t.sync') + '<span class="soon">' + t('soon') + '</span></h2><p class="muted" style="font-size:15px">' + t('db.sync.p') + '</p></section>';
+    return '';
   }
   function render() {
     var s = S.get(), h = AS.hash(), tab = h.get('tab') || 'account';
@@ -67,7 +67,7 @@
       if (!asked) { asked = true; AS.openAuth(); } return;
     }
     root.innerHTML = '<h1 class="h1" style="margin-bottom:36px">' + t('db.h') + '<span class="dim">' + s.user.name + ' · ' + (S.isPro() ? 'Pro' : 'Free') + '</span></h1>' +
-      '<div class="dash"><nav class="dash-tabs" aria-label="' + t('db.tabs') + '">' + TABS.map(function (x) { return '<a href="#tab=' + x[0] + '" aria-current="' + (x[0] === tab) + '">' + AS.ic(x[1]) + t('db.t.' + x[0]) + (x[0] === 'favorites' ? '<small>' + s.favorites.length + '</small>' : x[0] === 'sync' ? '<span class="soon" style="margin-left:auto">' + t('soon') + '</span>' : '') + '</a>'; }).join('') + '</nav><div>' + panel(tab, s) + '</div></div>';
+      '<div class="dash"><nav class="dash-tabs" aria-label="' + t('db.tabs') + '">' + TABS.map(function (x) { return '<a href="#tab=' + x[0] + '" aria-current="' + (x[0] === tab) + '">' + AS.ic(x[1]) + t('db.t.' + x[0]) + (x[0] === 'favorites' ? '<small>' + s.favorites.length + '</small>' : '') + '</a>'; }).join('') + '</nav><div>' + panel(tab, s) + '</div></div>';
     if (h.get('paid') === '1') { h.delete('paid'); history.replaceState(null, '', '#' + h.toString()); AS.toast(t(s.plan.trial ? 'db.t.trial' : 'db.t.paid')); }
   }
   function manage() {
