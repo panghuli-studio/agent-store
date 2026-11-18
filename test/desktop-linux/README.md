@@ -81,3 +81,13 @@ After a change to the client's screens, regenerate them:
 快照可能促使渲染，属于有干扰的测量；保留原脚本不附加 WebDriver 的对照轮次。以上是诊断分流规则，不是已确定的 Linux 根因，也不以关闭动画作为修复。
 
 `desktop-shots` 的 `ocr_run_id` 可填写已有诊断作业 ID，独立验证完成标题识别：从该作业下载 `disconnect-probe`，八张中英文真实完成帧必须精确匹配标题，默认中文陈旧帧与空白帧必须拒绝。无需重编客户端，产物需仍在保留期内。原图不改写；标题裁剪排除背景、正文与状态栏。
+
+## Real desktop input-method investigation (#239)
+
+The dedicated `Linux IME presentation measurements` workflow compares bare X11,
+GNOME X11 and nested GNOME Wayland, real IBus GTK/XIM input, native child-window
+promotion and WebKit rendering switches. It measures the published `.deb` as well
+as an independent GTK/WebKit page. See [the investigation](../../docs/investigations/linux-ime.md)
+for versions, native screenshots, limitations and why the ASCII screenshot scripts
+keep their test-only simple input context. A green measurement job alone is not a
+CJK or native-presentation pass; inspect the input events and original native PNGs.

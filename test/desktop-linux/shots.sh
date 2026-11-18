@@ -49,9 +49,10 @@ links_to() { [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; }
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
 export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
-# The harness types ASCII and needs no input method service. GTK selects XIM for zh,
-# ja, ko and th; on this Xvfb/WebKitGTK stack its zh path leaves stale native pixels
-# after input focus, even with IBus. The simple context passes (disconnect-probe.sh, #233).
+# ASCII screenshot automation deliberately disables WebKit compositing above.
+# X11 XIM can leave stale native frames in that mode even under GNOME (#239).
+# Keep simple test-only; ime-probe.yml exercises real IBus GTK/XIM and default rendering.
+# Evidence and limits: docs/investigations/linux-ime.md.
 export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
 sleep 2
