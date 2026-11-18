@@ -16,6 +16,11 @@ jobs:
       matrix:
         session: [bare, x11, wayland]
         rendering: [default, disabled]
+        include:
+          - session: x11
+            rendering: compositing-off
+          - session: x11
+            rendering: dmabuf-off
     steps:
       - uses: actions/checkout@v4
       - name: Install GNOME and CJK input engines

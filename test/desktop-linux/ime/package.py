@@ -42,6 +42,9 @@ try:
     time.sleep(5)
     if os.environ['GDK_BACKEND'] == 'x11' and os.environ.get('IME_SESSION') == 'bare':
         subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Agent Store', 'windowfocus'], check=True)
+    elif os.environ['GDK_BACKEND'] == 'x11':
+        subprocess.run(['xdotool', 'key', 'Escape', 'Escape'], check=True)
+        subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Agent Store', 'windowactivate', '--sync'], check=True)
     else:
         subprocess.run(['xdotool', 'key', 'Escape', 'Escape', 'alt+Tab'], check=True)
         time.sleep(1)
@@ -54,6 +57,8 @@ try:
     time.sleep(2)
     subprocess.run(['import', '-display', ':99', '-window', 'root', prefix + '-before.png'], check=True)
     subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '150', keys], check=True)
+    if os.environ.get('LC_ALL', '').startswith('ja_'):
+        subprocess.run(['xdotool', 'key', 'Return'], check=True)
     for frame in range(1, 4):
         time.sleep(2)
         # Capture native pixels before any WebKit snapshot/DOM request can stimulate painting.
