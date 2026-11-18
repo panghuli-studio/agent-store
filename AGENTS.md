@@ -78,3 +78,10 @@ Required steps before calling UI work complete:
    actual app.
 4. Fix any discrepancy found (functional or visual) before reporting the work as done —
    don't defer it to "future polish" without saying so explicitly and getting sign-off.
+
+## Fixing bugs
+
+- Trace every bug to its root cause and prove it with a reproduction or a measurement before changing code. The pull request states the cause, the evidence (steps, logs, measurements and their caliber) and why the change removes it; its regression test fails before the fix and passes after.
+- A change that only eases the symptom is not a fix: retries, larger timeouts or limits, swallowed errors, silenced or relaxed alerts, workarounds, less concurrency. It may merge as a stopgap only if the pull request says so and uses `Refs`, not `Closes`; the issue stays open until the cause is fixed.
+- If the cause is not found, write down what was ruled out and what data is missing, and add the measurement that would find it instead of guessing.
+- A review of a bug fix asks for changes when the pull request has no evidenced root cause or presents a mitigation as the fix.
