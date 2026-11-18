@@ -450,7 +450,7 @@ test('first-launch pull cleans files from a hook that failed before registration
   const remote = await bareRemote()
   await a.engine.connectBackup({ remote })
   await a.engine.backupNow()
-  globalThis.fetch = (async () => new Response('unavailable', { status: 503 })) as typeof fetch
+  globalThis.fetch = (async () => new Response('unavailable', { status: 503 })) as unknown as typeof fetch
   const b = await device('hook-failure')
   await b.engine.connectBackup({ remote })
   await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('could not be fully restored')
