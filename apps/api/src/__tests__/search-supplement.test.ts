@@ -15,7 +15,7 @@ import type { ExternalFind, SearchSource } from '../catalog/search-sources'
 import { clawhubSearch } from '../catalog/sources/clawhub'
 import { githubSkillsSource } from '../catalog/sources/github-skills'
 import { skillhubSearch } from '../catalog/sources/skillhub'
-import { skillsmpSearch } from '../catalog/sources/skillsmp'
+import { githubDirOf, skillsmpSearch } from '../catalog/sources/skillsmp'
 import { fallbackTrigger, lookupEligible, mergeFinds, normalizeQuery, reposByRelevance, type RepoScanOutcome, SearchSupplement, SUPPLEMENT_DEFAULTS, type SupplementConfig } from '../catalog/supplement'
 import { syncCatalog } from '../catalog/sync'
 import { openAppDb } from '../db/client'
@@ -267,9 +267,22 @@ describe('recorded search responses', () => {
     expect(base.calls).toEqual(['https://skillsmp.com/api/v1/skills/search?q=terraform&limit=5'])
     expect(finds[0]).toMatchObject({
       source: 'skillsmp', skillKey: 'github:wshobson/agents/terraform-module-library', githubRepo: 'wshobson/agents', author: 'wshobson',
+      githubDir: 'plugins/cloud-infrastructure/skills/terraform-module-library',
       url: 'https://skillsmp.com/creators/wshobson/agents/plugins-cloud-infrastructure-skills-terraform-module-library',
     })
     expect(finds[1]!.skillKey).toBe('github:github/awesome-copilot/terraform-azurerm-set-diff-analyzer')
+  })
+
+  test('SkillsMP: the skill directory is taken from githubUrl, without the branch', () => {
+    expect(githubDirOf('https://github.com/o/r/tree/main/skills/obsidian')).toBe('skills/obsidian')
+    expect(githubDirOf('https://github.com/o/r/tree/main/skills/obsidian/')).toBe('skills/obsidian')
+    expect(githubDirOf('https://github.com/o/r/blob/master/.claude/skills/x%20y/SKILL.md')).toBe('.claude/skills/x y')
+    expect(githubDirOf('https://github.com/o/r/blob/main/skills/x/README.md')).toBeNull()
+    expect(githubDirOf('https://github.com/o/r')).toBeNull()
+    expect(githubDirOf('https://github.com/o/r/tree/main')).toBeNull()
+    expect(githubDirOf('https://gitlab.com/o/r/tree/main/skills/x')).toBeNull()
+    expect(githubDirOf('https://github.com/o/r/tree/main/skills/%E0%A4%A')).toBeNull()
+    expect(githubDirOf(null)).toBeNull()
   })
 })
 
@@ -575,6 +588,85 @@ describe('what a lookup found', () => {
     ])
   })
 
+  // #152 (2026-11-18): SkillsMP answered 'obsidian kanban board', but GitHub truncates the git
+  // tree of openclaw/openclaw and nexu-io/open-design holds 170 skills, so neither scan gave
+  // a skill although each hit names its skill directory in githubUrl.
+  describe('the skill directory SkillsMP names', () => {
+    const MONO = 'mono/repo'
+    const MONO_SHA = '2'.repeat(40)
+    const KANBAN = 'github:mono/repo/obsidian-kanban'
+    /** A repo whose recursive tree GitHub truncates; `dirs` answer `<sha>:<dir>` tree requests. */
+    const truncatedRoutes = (dirs: Record<string, string[]>): Route => (url) => {
+      if (url.hostname === 'api.github.com' && url.pathname === `/repos/${MONO}/commits/HEAD`) return new Response(MONO_SHA)
+      const prefix = `/repos/${MONO}/git/trees/`
+      if (url.hostname === 'api.github.com' && url.pathname.startsWith(prefix)) {
+        const ref = decodeURIComponent(url.pathname.slice(prefix.length))
+        if (ref === MONO_SHA) return json({ sha: 'root', truncated: true, tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: 'r', size: 1 }] })
+        const dir = ref.startsWith(`${MONO_SHA}:`) ? ref.slice(MONO_SHA.length + 1) : null
+        const files = dir ? dirs[dir] : undefined
+        if (!files) return json({ message: 'Not Found' }, 404)
+        return json({ sha: `t-${dir}`, truncated: false, tree: files.map((path, i) => ({ path, mode: '100644', type: 'blob', sha: `b${i}`, size: 10 })) })
+      }
+      if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/`)) {
+        return new Response('---\nname: obsidian-kanban\ndescription: Kanban boards in an Obsidian vault\n---\n')
+      }
+      return undefined
+    }
+    const hit = (githubUrl: string, name = 'Obsidian Kanban') => ({ ...skillsmpHit(MONO, 'obsidian-kanban'), name, githubUrl })
+
+    test('a repo whose git tree is truncated is read through that directory alone and served', async () => {
+      const f = fakeFetch(
+        truncatedRoutes({ 'extensions/obsidian/skills/kanban': ['SKILL.md', 'scripts/board.py'] }),
+        searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(hit(`https://github.com/${MONO}/tree/main/extensions/obsidian/skills/kanban`)) }),
+      )
+      const logs: Record<string, unknown>[] = []
+      const s = supplement(f, { sources: both, log: (e) => logs.push(e) })
+      const done = await settle(s, 'obsidian kanban board')
+      expect(done.resources.map((r) => r.id)).toEqual([KANBAN])
+      expect(logs.find((e) => e['message'] === 'search supplement')?.['repos']).toEqual([{ repo: MONO, status: 'named skills', skills: 1 }])
+      expect(calls(f, 'api.github.com').map((c) => decodeURIComponent(new URL(c).pathname))).toEqual([
+        `/repos/${MONO}/commits/HEAD`,
+        `/repos/${MONO}/git/trees/${MONO_SHA}`,
+        `/repos/${MONO}/git/trees/${MONO_SHA}:extensions/obsidian/skills/kanban`,
+      ])
+      expect(s.resource(KANBAN)).toMatchObject({
+        repo: { fullName: MONO, commit: MONO_SHA, dir: 'extensions/obsidian/skills/kanban', treeSha: 't-extensions/obsidian/skills/kanban' },
+        files: [
+          { path: 'SKILL.md', downloadUrl: `https://raw.githubusercontent.com/${MONO}/${MONO_SHA}/extensions/obsidian/skills/kanban/SKILL.md` },
+          { path: 'scripts/board.py', downloadUrl: `https://raw.githubusercontent.com/${MONO}/${MONO_SHA}/extensions/obsidian/skills/kanban/scripts/board.py` },
+        ],
+      })
+    })
+
+    test('a truncated repo whose named directory holds no SKILL.md is an error and stays a listing', async () => {
+      const f = fakeFetch(
+        truncatedRoutes({ 'docs/kanban': ['README.md'] }),
+        searchRoutes({
+          clawhub: clawhubOk(),
+          skillsmp: skillsmpOk(hit(`https://github.com/${MONO}/tree/main/docs/kanban`), { ...hit(`https://github.com/${MONO}/tree/main/gone/kanban`, 'obsidian-kanban-2'), id: 'mono-repo-gone-kanban-skill-md' }),
+        }),
+      )
+      const logs: Record<string, unknown>[] = []
+      const done = await settle(supplement(f, { sources: both, log: (e) => logs.push(e) }), 'obsidian kanban board')
+      expect(done.resources).toEqual([])
+      expect(done.listings.map((l) => l.key).sort()).toEqual(['github:mono/repo/obsidian kanban', 'github:mono/repo/obsidian-kanban-2'])
+      expect(calls(f, 'raw.githubusercontent.com')).toEqual([])
+      expect(logs.find((e) => e['message'] === 'search supplement')?.['repos']).toEqual([{
+        repo: MONO, status: 'error', error: `${MONO}: git tree is truncated (too large to scan); no directory the finds name holds a SKILL.md`,
+      }])
+    })
+
+    test('of a repo over the limit, the directory is read even when the listing name is not its name', async () => {
+      const f = fakeFetch(acmeRoutes, searchRoutes({
+        clawhub: clawhubOk(),
+        skillsmp: skillsmpOk({ ...skillsmpHit('acme/tools', 'terraform-plan'), name: 'Terraform Planner', githubUrl: 'https://github.com/acme/tools/tree/main/skills/terraform-plan' }),
+      }))
+      const done = await settle(supplement(f, { sources: both, config: { scanMaxSkills: 1 } }), 'terraform')
+      expect(done.resources.map((r) => r.id)).toEqual([ACME_PLAN])
+      expect(calls(f, 'raw.githubusercontent.com')).toEqual([`https://raw.githubusercontent.com/acme/tools/${ACME_SHA}/skills/terraform-plan/SKILL.md`])
+    })
+  })
+
   test('survives a restart: a new process answers from app.db without asking any site', async () => {
     await settle(supplement(routes(), { sources: both }), 'terraform')
     for (const c of connections.splice(0)) c.close()
@@ -647,10 +739,10 @@ describe('repo scans', () => {
       { ...find('nowhere/x', 'obsidian'), githubRepo: null },
     ])
     expect(order).toEqual([
-      { repo: 'other/agent', skills: ['obsidian'] },
-      { repo: 'plain/kit', skills: ['daily-notes'] },
-      { repo: 'big/monorepo', skills: ['html-ppt-obsidian-gradient', 'obsidian-vault-maintainer'] },
-      { repo: 'acme/tools', skills: ['notes'] },
+      { repo: 'other/agent', skills: ['obsidian'], dirs: [] },
+      { repo: 'plain/kit', skills: ['daily-notes'], dirs: [] },
+      { repo: 'big/monorepo', skills: ['html-ppt-obsidian-gradient', 'obsidian-vault-maintainer'], dirs: [] },
+      { repo: 'acme/tools', skills: ['notes'], dirs: [] },
     ])
   })
 
@@ -757,6 +849,31 @@ describe('repo scans', () => {
       expect(calls(f, 'skillsmp.com')).toHaveLength(1)
     })
   })
+
+  for (const failed of [ACME_SKILLS.slice(0, 1), ACME_SKILLS]) {
+    test(`a rescan with ${failed.length} failed downloads preserves stored skills across restart and catalog swap`, async () => {
+      const answers = searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')) })
+      await settle(supplement(fakeFetch(acmeRoutes, answers), { sources: both }), 'terraform')
+      advance(25 * HOUR)
+      const broken: Route = (url) => url.hostname === 'raw.githubusercontent.com'
+        && failed.some((name) => url.pathname.endsWith(`/${name}/SKILL.md`))
+        ? new Response('unavailable', { status: 503 }) : undefined
+      const logs: Record<string, unknown>[] = []
+      const f = fakeFetch(broken, acmeRoutes, searchRoutes({
+        clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')),
+      }))
+      const s = supplement(f, { sources: both, log: (e) => logs.push(e) })
+      await settle(s, 'terraform infrastructure')
+      expect(logs.find((e) => e['message'] === 'search supplement')).toMatchObject({
+        repos: [{ repo: 'acme/tools', status: 'partial', skills: ACME_SKILLS.length - failed.length }],
+      })
+      for (const id of [ACME_PLAN, ACME_DRIFT]) expect(s.resource(id)?.id).toBe(id)
+      for (const c of connections.splice(0)) c.close()
+      reader.open(catalogV1b)
+      const restarted = supplement(fakeFetch(), { sources: both })
+      for (const id of [ACME_PLAN, ACME_DRIFT]) expect(restarted.resource(id)?.id).toBe(id)
+    })
+  }
 
   test('a failing scan is logged with its error and no credentials; the repo waits before it is tried again', async () => {
     const broken: Route = (url) => (url.hostname === 'api.github.com' ? json({ message: 'Server Error' }, 502) : undefined)

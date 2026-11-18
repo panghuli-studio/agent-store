@@ -8,6 +8,27 @@ import { githubRepoOf } from '../stars'
 // searches a day and 10 a minute; with an API key the free allowance is the same.
 export const SKILLSMP_URL = 'https://skillsmp.com'
 
+/**
+ * The directory a SkillsMP `githubUrl` points at (`…/tree/<branch>/<dir>`, or a `blob/…`
+ * SKILL.md in it), or null for the repo root or another URL. The branch is taken to be
+ * one segment; the directory is read at the default branch head either way.
+ */
+export function githubDirOf(url: string | null): string | null {
+  const m = url?.trim().match(/^https:\/\/github\.com\/[^/]+\/[^/]+\/(tree|blob)\/[^/]+\/([^?#]+?)\/?(?:[?#].*)?$/i)
+  if (!m) return null
+  let segments: string[]
+  try {
+    segments = m[2]!.split('/').map(decodeURIComponent)
+  } catch {
+    return null
+  }
+  if (m[1]!.toLowerCase() === 'blob') {
+    if (segments.at(-1) !== 'SKILL.md') return null
+    segments = segments.slice(0, -1)
+  }
+  return segments.length ? segments.join('/') : null
+}
+
 export function skillsmpSearch(options: { baseUrl?: string; apiKey?: string } = {}): SearchSource {
   const base = options.baseUrl ?? SKILLSMP_URL
   return {
@@ -26,7 +47,8 @@ export function skillsmpSearch(options: { baseUrl?: string; apiKey?: string } = 
       return data['skills'].filter(isRecord).flatMap((item) => {
         const id = str(item['id'])
         const name = str(item['name'])
-        const repo = githubRepoOf(str(item['githubUrl']))
+        const githubUrl = str(item['githubUrl'])
+        const repo = githubRepoOf(githubUrl)
         const listing = str(item['skillUrl'])
         if (!id || !name || !repo || !listing) return []
         return [{
@@ -39,6 +61,7 @@ export function skillsmpSearch(options: { baseUrl?: string; apiKey?: string } = 
           author: str(item['author']),
           url: listing,
           githubRepo: repo,
+          githubDir: githubDirOf(githubUrl),
         }]
       })
     },

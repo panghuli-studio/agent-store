@@ -46,7 +46,10 @@ export interface SupplementConfig {
   scanRepos: number
   /** Most repos one lookup tries; the rest are tried by a later lookup or wait for the catalog sync. */
   scanAttempts: number
-  /** Of a repo with more skills than this, only the skills the finds name are read; the rest wait for the catalog sync. */
+  /**
+   * Of a repo with more skills than this, or one whose git tree GitHub truncates, only the
+   * skills the finds name are read; the rest wait for the catalog sync.
+   */
   scanMaxSkills: number
   scanTimeoutMs: number
   scansPerHour: number
@@ -147,6 +150,8 @@ export interface RepoToScan {
   repo: string
   /** Lowercase skill names the finds name in it. */
   skills: string[]
+  /** Skill directories the finds name in it (`ExternalFind.githubDir`). */
+  dirs: string[]
 }
 
 /**
@@ -154,18 +159,19 @@ export interface RepoToScan {
  * finds, then by where its first find stands.
  */
 export function reposByRelevance(q: string, finds: ExternalFind[]): RepoToScan[] {
-  const byRepo = new Map<string, { at: number; score: number; skills: Set<string> }>()
+  const byRepo = new Map<string, { at: number; score: number; skills: Set<string>; dirs: Set<string> }>()
   finds.forEach((f, at) => {
     if (!f.githubRepo) return
-    const entry = byRepo.get(f.githubRepo) ?? { at, score: 0, skills: new Set<string>() }
+    const entry = byRepo.get(f.githubRepo) ?? { at, score: 0, skills: new Set<string>(), dirs: new Set<string>() }
     entry.score = Math.max(entry.score, termScore(q, f))
     const prefix = `github:${f.githubRepo}/`
     if (f.skillKey.startsWith(prefix)) entry.skills.add(f.skillKey.slice(prefix.length).toLowerCase())
+    if (f.githubDir) entry.dirs.add(f.githubDir)
     byRepo.set(f.githubRepo, entry)
   })
   return [...byRepo]
     .sort(([, a], [, b]) => b.score - a.score || a.at - b.at)
-    .map(([repo, e]) => ({ repo, skills: [...e.skills] }))
+    .map(([repo, e]) => ({ repo, skills: [...e.skills], dirs: [...e.dirs] }))
 }
 
 /** How one repo scan of a lookup ended; logged with the lookup. */
@@ -511,8 +517,9 @@ export class SearchSupplement {
       return outcome
     }
     try {
-      const scan = await scanRepo(github, this.fetchImpl, repo, new Map(), { maxSkills: this.c.scanMaxSkills, named: new Set(w.skills) })
-      this.o.store.saveResources(repo, scan.records, this.now().toISOString(), { replace: !scan.subset })
+      const scan = await scanRepo(github, this.fetchImpl, repo, new Map(), { maxSkills: this.c.scanMaxSkills, named: new Set(w.skills), dirs: new Set(w.dirs) })
+      // A failed download does not mean the previously validated skill disappeared.
+      this.o.store.saveResources(repo, scan.records, this.now().toISOString(), { replace: !scan.subset && !scan.skipped[DOWNLOAD_FAILED] })
       const status = scan.skipped[DOWNLOAD_FAILED] ? 'partial' : scan.records.length === 0 ? 'no skills' : scan.subset ? 'named skills' : 'scanned'
       return mark({ repo, status, skills: scan.records.length })
     } catch (e) {

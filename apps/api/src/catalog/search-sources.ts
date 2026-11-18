@@ -13,6 +13,11 @@ export interface ExternalFind {
   /** The listing on its site. */
   url: string
   githubRepo: string | null
+  /**
+   * The skill's directory in `githubRepo` when the site names it (SkillsMP does), without
+   * the branch: read directly when the repo is too large to scan whole.
+   */
+  githubDir?: string | null
 }
 
 /** Keyword search on one directory. The query is the only thing a site is ever sent. */
@@ -27,6 +32,9 @@ export interface SearchSource {
 
 const SKILL_KEY = /^(github:[\w.-]+\/[\w.-]+|clawhub:[^\s/:]+|skillhub:[^\s/:]+)\/[^/\u0000-\u001f]{1,200}$/
 const LISTING_ID = /^[^\s\u0000-\u001f]{1,300}$/
+
+/** A repo-relative directory: plain segments, no `.`/`..`, no control characters. */
+const GITHUB_DIR = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[^/\u0000-\u001f\\:]{1,100}(?:\/[^/\u0000-\u001f\\:]{1,100}){0,9}$/
 
 const clean = (v: string | null, max: number): string | null => {
   const s = v?.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -56,5 +64,6 @@ export function checkFind(source: SearchSource, f: ExternalFind): ExternalFind |
     author: clean(f.author, 100),
     url: url.toString(),
     githubRepo: f.githubRepo,
+    githubDir: f.githubRepo && f.githubDir && GITHUB_DIR.test(f.githubDir) ? f.githubDir : null,
   }
 }

@@ -165,12 +165,13 @@ skills.sh 不在其中：它的 `robots.txt` 禁止 `/api/` 和 `/search`。
 只有来自 GitHub 仓库的结果会变成可安装的资源：API 用和定时同步相同的 `scanRepo` 读这个仓库，读到的技能和定时同步产出的 id、结构完全一致。只托管在 ClawHub、SkillHub 上的技能目前装不了，只作为 `listings` 外链返回，也不进 `catalog.db`。
 
 - 仓库按相关度排队（`reposByRelevance`）：一个仓库的得分取它名下各条结果的最高分，每个搜索词出现在名称里记 2 分、只出现在描述里记 1 分；同分的按结果的先后。同时读 2 个；一个仓库没读出技能（`too large`、`no skills`、`error`）就接着读队里的下一个，直到有 2 个仓库读出了技能、一次查询试满 6 个仓库、碰到 GitHub 限额或每小时仓库数用完为止。别的查询正在读的仓库不重复读。
-- 技能目录超过 40 个的仓库，只读被结果点名的那几个技能（按目录名匹配技能名），其余留给定时同步；点名的技能不在技能目录里时记为 `too large`，结果只作为外链返回。整仓库读到的技能替换这个仓库原先存的；只读点名技能时只替换这几个。
+- 技能目录超过 40 个的仓库，只读被结果点名的那几个技能，其余留给定时同步。点名有两种：SkillsMP 的 `githubUrl` 给出的技能目录（`…/tree/<分支>/<目录>`，去掉分支，按默认分支最新提交读），以及按目录名匹配的技能名；两者都不在技能目录里时记为 `too large`，结果只作为外链返回。整仓库读到的技能替换这个仓库原先存的；只读点名技能时只替换这几个。
+- GitHub 截断目录树的仓库（文件太多，如 `openclaw/openclaw`）不能整仓库读，只按 SkillsMP 给出的技能目录逐个取这个目录自己的树（`<提交>:<目录>`，每个目录一次请求）再读 `SKILL.md`；没有给出目录，或给出的目录都没有 `SKILL.md` 时记为 `error`。分支名里带 `/` 时取出的目录不对，这个目录读不到，结果仍是外链。
 - 10 秒内没读完的不等：这次查询先按外链返回，后面的仓库照常接着读，读到的技能存下后，同一搜索词再查一次（或页面再次请求）就作为可安装资源返回。
 - 一个超出技能目录上限的仓库只花两次 GitHub 请求（提交和目录树）就能判定 `too large`，不下载 `SKILL.md`，所以接着读下一个的代价很小。
 - 同一仓库 6 小时内不重复读。没有 `GITHUB_TOKEN` 时每小时最多读 20 个仓库，有则 200 个。GitHub 返回限额错误时，按它给的 `retry-after` 或 `x-ratelimit-reset` 停止读仓库（没有这两个头时停 15 分钟，最多 1 小时），这期间的仓库不记为已读，停止结束后的查询会再读。额度和停止时间记在进程内存里。
 
-每次查询结束写一条 `search supplement` 日志：各站点的结果（`sources`）、条目数（`finds`），以及这次读的每个仓库（`repos`：仓库名、`status`、读到的技能数 `skills`、出错时的 `error`）。`status` 取值：`scanned` 整仓库读完；`named skills` 只读了点名的技能；`no skills` 没有可用的技能；`partial` 有 `SKILL.md` 没下载成功；`too large` 技能太多且点名的技能不在其中；`error` 其他错误（`error` 带错误信息，不含令牌）；`rate limited` GitHub 限额中，没读；`over budget` 超出每小时仓库数，没读；`running` 10 秒内没读完。`repos` 只列已经开始读的仓库。还在读的仓库读完后另写一条 `search supplement: repo scans ended`，带同样的 `repos`。日志里没有搜索词，只有它的 SHA-256 前 12 位（`key`）。
+每次查询结束写一条 `search supplement` 日志：各站点的结果（`sources`）、条目数（`finds`），以及这次读的每个仓库（`repos`：仓库名、`status`、读到的技能数 `skills`、出错时的 `error`）。`status` 取值：`scanned` 整仓库读完；`named skills` 只读了点名的技能（包括目录树被截断时按目录读到的）；`no skills` 没有可用的技能；`partial` 有 `SKILL.md` 没下载成功；`too large` 技能太多且点名的技能不在其中；`error` 其他错误（`error` 带错误信息，不含令牌）；`rate limited` GitHub 限额中，没读；`over budget` 超出每小时仓库数，没读；`running` 10 秒内没读完。`repos` 只列已经开始读的仓库。还在读的仓库读完后另写一条 `search supplement: repo scans ended`，带同样的 `repos`。日志里没有搜索词，只有它的 SHA-256 前 12 位（`key`）。
 
 **持久化，以及和定时发布的衔接**
 
@@ -265,3 +266,59 @@ make db-reset  # 删掉本地 app.db 重建
 推 `v*` tag 后，`release` 工作流构建 macOS（通用版 .dmg）、Windows（.exe / .msi）和 Linux（.deb / .rpm / .AppImage）安装包，发布到同名的 GitHub Release。版本号写在 `apps/cli-gui/src-tauri/tauri.conf.json` 和 `Cargo.toml`，打 tag 前先改。
 
 网页商店读最新 Release 的文件列表（`apps/store/lib/latest-release.ts`，缓存 5 分钟）；`/download/<目标>` 跳到对应的安装包，取不到时跳到发布页。
+
+### 搜索补充发现验收记录（2026-11-18，#152）
+
+- 测试环境 `GET /api/discovery/export` 返回 41 条发现、6 个仓库；
+  `nousresearch/hermes-agent` 的最近扫描时间是 2026-11-14T13:38:58.504Z，
+  状态为 `too large`。这证实早期外链结果触发了大仓库上限，不能据此推断为缺少令牌。
+  当前代码已支持大仓库按技能目录名扫描，以及失败仓库让出扫描名额（#218）。
+- [定时同步 44212628805](https://github.com/panghuli-studio/agent-store/actions/runs/44212628805)
+  成功读取非空导出：41 listings、6 repos、0 skipped；重复导入新增数均为 0。
+  测试 API 的 `/api/resources?q=cli-anything-obsidian&kind=skill` 已能返回
+  `github:hkuds/cli-anything/cli-anything-obsidian`，该记录也存在于 SkillsMP 发现导出中。
+  这证明发现仓库中的技能已进入发布目录；不证明该仓库只由搜索发现。
+- 本次再次请求 `obsidian daily notes skill` 返回 `found`、`partial: true`，
+  只有外链。公开响应不包含各站点失败原因；仍需部署侧日志确认这一次 SkillsMP
+  未产出结果的原因，不能把历史 `too large` 当作此次失败原因。
+- 回归测试位于 `apps/api/src/__tests__/search-supplement.test.ts`：关闭并重开
+  app.db、替换不含新技能的 catalog、发布含相同 id 的 catalog 后交接，及非空导出
+  经同步扫描进入 catalog。补搜扫描若有 SKILL.md 下载失败，保留旧的已验证资源，
+  只更新本次成功读取的资源；完整扫描才删除仓库中已消失的技能。
+- 线上进程重启验收尚未执行：重启属于部署操作，需部署侧授权及访问；
+  上述进程重建和 catalog 交接测试不能替代真实持久卷重启验收。
+- UI 当前仅有深色主题（#159）；验收矩阵为中文/英文 × 390/820/1440px。
+  `store-screenshots` 工作流包含补搜 offer/searching/found/none/unavailable 状态；
+  这些是明确标记的预览数据，不能替代真实 API 流程验收。
+
+本轮修复的 [unit 检查](https://github.com/panghuli-studio/agent-store/actions/runs/44267974124)
+已通过 API lint、类型检查和测试；新增的单个/全部下载失败、重开 app.db 和
+catalog 替换回归均通过。再次请求 `obsidian cli skill` 也只返回外链，
+而 `/api/resources` 已有上述 Obsidian 技能；需要部署侧确认运行版本及对应日志，
+不能仅凭主分支实现认定线上已具备 #219 的行为。
+
+[界面截图验收 44267969312](https://github.com/panghuli-studio/agent-store/actions/runs/44267969312)
+在 Actions 中实际启动商店和带发布目录的 API，工作流已成功。
+已逐张查看 offer/searching/found/none/unavailable 的中文、英文 ×
+390/820/1440px 截图，对照 `apps/store/DESIGN.md`：说明卡片换行、移动端按钮、
+可安装行与外链行、部分结果提示均符合现有设计，未发现横向溢出或视觉偏差。
+预览模式的 unavailable 隐藏重试按钮；正常模式有重试，组件测试覆盖该交互。
+这轮没有修改界面；真实新发现从浏览器确认到可安装详情的链路仍未完成验收。
+
+部署侧验收（2026-11-18，运行镜像构建自 #225 的提交，含 #218、#219，不含 #229；
+未配置 `GITHUB_TOKEN` 和 `SKILLSMP_API_KEY`）：
+
+- 08:31:50Z 的 `obsidian daily notes skill`：SkillsMP 超时（每站 4 秒），
+  不是限额或缺少令牌；没有 SkillsMP 结果就没有仓库可读，所以只有外链、`partial: true`。
+- 08:49:19Z 的 `obsidian kanban board`：SkillsMP 返回 10 条，读到的两个仓库都没出技能：
+  `openclaw/openclaw` 目录树被截断（`error`），`nexu-io/open-design` 有 170 个技能目录、
+  点名的技能名对不上目录名（`too large`）。两者的 `githubUrl` 都给出了技能目录，
+  但当时只取了仓库名。本 PR 起按这个目录读（见上文“哪些结果能安装”），
+  回归测试覆盖截断仓库按目录读出、目录没有 `SKILL.md` 时为 `error`、
+  名称与目录名不一致时按目录读出。
+- 发现导出从 41 条/6 仓库变为 46 条/6 仓库。滚动重启两次后导出除 `generatedAt`
+  外完全一致，5 条新发现的 `firstSeenAt` 和两个仓库的状态、尝试时间都在；
+  同一查询直接用存下的结果回答，没有再请求站点。重启期间 60 次列表请求均为 200。
+- 仍未验证：新读出的可安装资源（`found_resources`）跨重启——这次没有仓库读出技能；
+  这 5 条发现经下一次定时发布后仍在；浏览器从新发现到可安装详情的流程；
+  本 PR 和 #229 的修复在线上的效果（需部署后再查同一查询）。
