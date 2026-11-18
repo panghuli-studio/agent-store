@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Invoked in a disposable CI HOME and private D-Bus session. No production settings.
-set -euo pipefail
+set -euxo pipefail
 mode=$1
 out=$2
 mkdir -p "$out"
@@ -21,6 +21,8 @@ export XDG_RUNTIME_DIR="$HOME/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 export LIBGL_ALWAYS_SOFTWARE=1
+# GNOME owns IBus source selection; register actual engines before Shell starts.
+gsettings set org.gnome.desktop.input-sources sources "[('ibus', 'libpinyin')]"
 if [ "$mode" = wayland ]; then
   # A real GNOME compositor nested in Xvfb; screenshots sample its host surface.
   gnome-shell --nested --wayland >"$out/gnome.log" 2>&1 & pids+=("$!")
@@ -42,7 +44,9 @@ for language in zh ja ko; do
     ja) locale=ja_JP.UTF-8; engine=anthy; keys='nihongo ' ;;
     ko) locale=ko_KR.UTF-8; engine=hangul; keys='gksrmf ' ;;
   esac
-  ibus engine "$engine"
+  gsettings set org.gnome.desktop.input-sources sources "[('ibus', '$engine')]"
+  sleep 2
+  ibus engine >"$out/$language-selected-engine.txt"
   for module in ibus xim gtk-im-context-simple; do
     name="$language-$module"
     LANG="$locale" LC_ALL="$locale" GTK_IM_MODULE="$module" python3 test/desktop-linux/ime/probe.py >"$out/$name.jsonl" 2>"$out/$name.log" &
@@ -50,7 +54,6 @@ for language in zh ja ko; do
     sleep 4
     kill -0 "$page"
     # XTEST enters the nested compositor too; events in JSONL prove whether input reached GTK.
-    xdotool mousemove 400 180 click 1
     xdotool type --clearmodifiers --delay 150 "$keys"
     for frame in 1 2 3; do
       sleep 2
