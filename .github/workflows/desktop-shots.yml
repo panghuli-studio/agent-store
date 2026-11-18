@@ -52,6 +52,25 @@ jobs:
           path: out/probe
           run-id: ${{ inputs.ocr_run_id }}
           github-token: ${{ github.token }}
+      - name: Measure OCR preprocessing on the same native Chinese heading
+        shell: bash
+        run: |
+          set -euo pipefail
+          for recipe in lanczos catrom inverse threshold inverse-threshold grayscale; do
+            extra=()
+            case "$recipe" in
+              catrom) extra=(-filter Catrom) ;;
+              inverse) extra=(-negate) ;;
+              threshold) extra=(-colorspace Gray -threshold 60%) ;;
+              inverse-threshold) extra=(-negate -colorspace Gray -threshold 60%) ;;
+              grayscale) extra=(-colorspace Gray) ;;
+            esac
+            convert out/probe/plain-zh-im-simple-5-done-15s.png -crop 126x24+374+199 +repage "${extra[@]}" -resize 400% "out/$recipe.png"
+            for mode in 6 7 11 13; do
+              text=$(tesseract "out/$recipe.png" stdout -l chi_sim --psm "$mode" 2>/dev/null | tr -d '[:space:]')
+              echo "$recipe psm=$mode: $text"
+            done
+          done
       - name: Real completion pixels pass; stale and blank pixels fail
         shell: bash
         run: |
