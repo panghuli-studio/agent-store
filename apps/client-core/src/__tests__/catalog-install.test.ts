@@ -7,7 +7,7 @@ import { parse as parseToml } from '@iarna/toml'
 import { EngineImpl } from '../engine'
 import { CodexMcpUnsupportedError } from '../config/codex-mcp'
 import {
-  emptyInput, mcpResource, npmPackage, providerResource, serveCatalog, skillFiles, skillResource,
+  emptyInput, hostedSkillResource, mcpResource, npmPackage, providerResource, serveCatalog, skillFiles, skillResource,
 } from './helpers/resources'
 
 process.env['AS_CLAUDE_BIN'] = ''
@@ -144,6 +144,52 @@ test('skill: files fetched at the pinned commit into the library, linked into bo
     claude: { path: join(claudeDir, 'skills', 'find-skills'), mode: 'symlink', sourceHash: marker.contentHash },
     codex: { path: join(codexDir, 'skills', 'find-skills'), mode: 'symlink', sourceHash: marker.contentHash },
   })
+})
+
+const HOSTED_MD = '---\nname: terraform\ndescription: Writes Terraform\n---\nbody\n'
+const HOSTED_FILES = { 'SKILL.md': HOSTED_MD, 'refs/state.md': '# State\n' }
+
+test('hosted skill: the preview names the site and the SHA-256 check; files land only when every hash matches', async () => {
+  const claw = hostedSkillResource('clawhub', 'ivangdavila/terraform', HOSTED_FILES)
+  const hub = hostedSkillResource('skillhub', 'ake/dev-god', { 'SKILL.md': HOSTED_MD.replace('terraform', 'dev-god') })
+  globalThis.fetch = serveCatalog([claw, hub], { ...skillFiles(claw, HOSTED_FILES), ...skillFiles(hub, { 'SKILL.md': HOSTED_MD.replace('terraform', 'dev-god') }) })
+
+  const preview = await engine.getResource('clawhub:ivangdavila/terraform')
+  expect(preview.installError).toBeUndefined()
+  expect(preview.install).toMatchObject({
+    category: 'skill', slug: 'ivangdavila-terraform', resourceId: 'clawhub:ivangdavila/terraform', version: '1.0.0',
+    hosted: { site: 'clawhub', listingId: 'ivangdavila/terraform', version: '1.0.0', url: 'https://clawhub.ai/ivangdavila/skills/terraform' },
+  })
+  expect(preview.install && 'source' in preview.install ? preview.install.source : undefined).toBeUndefined()
+
+  const outcome = await engine.installAndEnable('clawhub:ivangdavila/terraform')
+  expect(outcome.enabled).toEqual(['claude', 'codex'])
+  const lib = join(aasHome, 'skills', 'ivangdavila-terraform')
+  expect(await readFile(join(lib, 'refs', 'state.md'), 'utf-8')).toBe('# State\n')
+  const marker = JSON.parse(await readFile(join(lib, '.agent-store.json'), 'utf-8'))
+  expect(marker.source).toBeNull()
+  expect(marker.hosted).toEqual({ site: 'clawhub', listingId: 'ivangdavila/terraform', version: '1.0.0' })
+  expect(await readlink(join(claudeDir, 'skills', 'terraform'))).toBe(lib)
+
+  const fromHub = await engine.installAndEnable('skillhub:ake/dev-god')
+  expect(fromHub.slug).toBe('ake-dev-god')
+  expect(await readFile(join(aasHome, 'skills', 'ake-dev-god', 'SKILL.md'), 'utf-8')).toContain('name: dev-god')
+})
+
+test('hosted skill: a file that does not match its SHA-256 or size installs nothing', async () => {
+  const claw = hostedSkillResource('clawhub', 'ivangdavila/terraform', HOSTED_FILES)
+  const served = skillFiles(claw, HOSTED_FILES)
+  served[claw.files[1]!.downloadUrl] = '# Stat3\n'
+  globalThis.fetch = serveCatalog([claw], served)
+  const err = await engine.installAndEnable('clawhub:ivangdavila/terraform').catch(e => e)
+  expect(err).toBeInstanceOf(Error)
+  expect(String(err.message)).toContain('SHA-256 mismatch')
+  await expect(lstat(join(aasHome, 'skills', 'ivangdavila-terraform'))).rejects.toThrow()
+  await expect(lstat(join(claudeDir, 'skills', 'terraform'))).rejects.toThrow()
+
+  served[claw.files[1]!.downloadUrl] = '# State\n!'
+  const short = await engine.installAndEnable('clawhub:ivangdavila/terraform').catch(e => e)
+  expect(String(short.message)).toContain('expected 8 bytes, got 9')
 })
 
 test('provider: config.json starts from the built-in connection; enabling waits for the key', async () => {

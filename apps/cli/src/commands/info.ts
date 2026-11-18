@@ -1,6 +1,8 @@
 import type { CatalogResourceDetail, Engine } from '@as/types'
 import { errorMessage } from '../utils/exit-codes'
 
+const SITE: Record<string, string> = { clawhub: 'ClawHub', skillhub: 'SkillHub' }
+
 export async function runInfo(
   engine: Engine,
   args: string[],
@@ -29,7 +31,11 @@ export async function runInfo(
     out(`  Id           ${r.id}`)
     if (r.author) out(`  Author       ${r.author.name}${r.author.url ? ` (${r.author.url})` : ''}`)
     if (r.homepageUrl) out(`  Homepage     ${r.homepageUrl}`)
-    if (r.kind === 'skill') out(`  Source       ${r.repo.fullName}/${r.repo.dir} @ ${r.repo.commit.slice(0, 12)}`)
+    if (r.kind === 'skill' && r.repo) out(`  Source       ${r.repo.fullName}/${r.repo.dir} @ ${r.repo.commit.slice(0, 12)}`)
+    if (r.kind === 'skill' && r.hosted) {
+      out(`  Source       ${SITE[r.hosted.site]} ${r.hosted.listingId} @ ${r.hosted.version} (${r.hosted.url})`)
+      out(`  Files        ${r.files.length}, each checked against its SHA-256 at install`)
+    }
     if (r.kind === 'mcp') {
       for (const p of r.packages) out(`  Package      ${p.registryType} ${p.identifier}${p.version ? `@${p.version}` : ''} (${p.transport.type})`)
       for (const x of r.remotes) out(`  Remote       ${x.type} ${x.url}`)

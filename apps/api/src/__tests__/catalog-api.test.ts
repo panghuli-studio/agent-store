@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpResourceDetail, ResourceListResponse, SkillResourceDetail } from '@as/types'
+import type { GitHubSkillResourceDetail, McpResourceDetail, ResourceListResponse } from '@as/types'
 import { Database } from 'bun:sqlite'
 import { migrateCatalog, openCatalogForWrite } from '../catalog/db'
 import { CatalogReader, checkCatalogFile } from '../catalog/reader'
@@ -122,7 +122,7 @@ describe('resource routes', () => {
     expect(body.resources[0]!.origin.upstreamId).toBe('io.github.github/github-mcp-server')
     const counted = body.resources.map((r) => r.stars).filter((s) => s !== null)
     expect(counted).toEqual([...counted].sort((a, b) => b! - a!))
-    const skill = await get<{ resource: SkillResourceDetail }>('/api/resources/github:anthropics/skills/frontend-design')
+    const skill = await get<{ resource: GitHubSkillResourceDetail }>('/api/resources/github:anthropics/skills/frontend-design')
     // anthropics/skills is not in the GraphQL fixture: unresolved, so null.
     expect(skill.body.resource.stars).toBeNull()
   })
@@ -154,7 +154,7 @@ describe('resource routes', () => {
     expect(enc.body).toEqual(raw.body)
     expect(raw.body.resource.packages[0]!.environmentVariables[0]).toMatchObject({ name: 'SUPABASE_ACCESS_TOKEN', isSecret: true, isRequired: true })
     expect(raw.body.resource.origin).toMatchObject({ site: 'mcp-registry', upstreamId: 'com.supabase/mcp', unavailableAt: null })
-    const skill = await get<{ resource: SkillResourceDetail }>('/api/resources/github:anthropics/skills/frontend-design')
+    const skill = await get<{ resource: GitHubSkillResourceDetail }>('/api/resources/github:anthropics/skills/frontend-design')
     expect(skill.body.resource.repo.dir).toBe('skills/frontend-design')
     expect((await get('/api/resources/github:nope/nope/nope')).status).toBe(404)
   })

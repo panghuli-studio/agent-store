@@ -7,7 +7,7 @@ import { defaultDiscoverySources, defaultSources } from './catalog/sources'
 import { formatReportMarkdown, syncCatalog } from './catalog/sync'
 
 // bun run sync:catalog [--db catalog.db] [--out catalog.db] [--discovery discovery.db] [--full]
-//   [--sources skills-sh,clawhub,skillhub,mcp-registry,github-skills,builtin-providers] [--min-ratio 0.8]
+//   [--sources skills-sh,clawhub,skillhub,mcp-registry,github-skills,clawhub-skills,skillhub-skills,builtin-providers] [--min-ratio 0.8]
 //   [--report-json report.json] [--report-md report.md] [--finds-url https://…/api/discovery/export]
 // Reads the previous catalog from --db when it exists, syncs into a copy and
 // moves the copy to --out. Exits 2 without writing --out when the result has

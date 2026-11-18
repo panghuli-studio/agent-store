@@ -21,7 +21,11 @@ export function requiredKeys(detail: SelectedDetail): string[] {
 
 function defaultSteps(detail: SelectedDetail, t: TFn): string[] {
   if (detail.category === 'skill') {
-    return [`file · ${t('catalog.skillFetch')} ~/.agent-store/skills/${detail.slug}`, `link · ${t('catalog.skillLink')}`]
+    const hosted = 'hosted' in detail ? detail.hosted : undefined
+    const fetch = hosted
+      ? t('catalog.skillFetchHosted').replace('{site}', t(`catalog.source.${hosted.site}`))
+      : t('catalog.skillFetch')
+    return [`file · ${fetch} ~/.agent-store/skills/${detail.slug}`, `link · ${t('catalog.skillLink')}`]
   }
   if (detail.category === 'mcp') {
     const transport = 'transport' in detail && detail.transport ? detail.transport : 'stdio'
@@ -69,6 +73,13 @@ export function typeFacts(detail: SelectedDetail, t: TFn): string[] {
   if (detail.category === 'skill') {
     const repo = detail.resource?.kind === 'skill' ? detail.resource.repo : undefined
     if (repo) return [`${t('catalog.factSource')}${repo.fullName}${repo.dir ? `/${repo.dir}` : ''} @ ${repo.commit.slice(0, 12)}`]
+    const hosted = 'hosted' in detail ? detail.hosted : undefined
+    if (hosted) {
+      return [
+        `${t('catalog.factSource')}${t(`catalog.source.${hosted.site}`)} ${hosted.listingId} · ${t('catalog.factVersion')}${hosted.version}`,
+        t('catalog.factFilesVerified').replace('{n}', String(hosted.files.length)),
+      ]
+    }
     const contentUrl = 'contentUrl' in detail ? detail.contentUrl : undefined
     if (contentUrl) return [`${t('readme.factDownloadUrl')}${contentUrl}`]
   }

@@ -33,7 +33,7 @@ function serverSort(sort: DiscoverSort): ResourceSort {
 
 /** The kind a favorite's id implies, for an entry the catalog no longer has. */
 function kindOfId(id: string): CatalogResource['kind'] {
-  return id.startsWith('builtin:') ? 'provider' : id.startsWith('github:') ? 'skill' : 'mcp'
+  return id.startsWith('builtin:') ? 'provider' : /^(github|clawhub|skillhub):/.test(id) ? 'skill' : 'mcp'
 }
 
 function favoriteRow(f: FavoriteItem): CatalogResource | null {

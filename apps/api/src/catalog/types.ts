@@ -6,7 +6,9 @@ import type {
   ResourceKind,
   ResourceSite,
   ResourceSummary,
-  SkillResourceDetail,
+  GitHubSkillResourceDetail,
+  HostedSkillResourceDetail,
+  SkillHostSite,
 } from '@as/types'
 
 type KindFields<T extends ResourceSummary> = Omit<T, keyof ResourceSummary>
@@ -14,7 +16,8 @@ type KindFields<T extends ResourceSummary> = Omit<T, keyof ResourceSummary>
 /** The kind-specific part of a detail, stored as JSON next to the common columns. */
 export type ResourceDetailFields =
   | KindFields<McpResourceDetail>
-  | KindFields<SkillResourceDetail>
+  | KindFields<GitHubSkillResourceDetail>
+  | KindFields<HostedSkillResourceDetail>
   | KindFields<ProviderResourceDetail>
 
 /** One upstream entry, normalized, as a source hands it to the sync. */
@@ -59,6 +62,26 @@ export interface SourceRun {
   watermark?: string | null
   /** Scopes the run tried, with how it went; rate-limited ones are left out so they stay due. */
   attempted?: Array<{ repo: string; status: string }>
+  /** Hosted skills the run read, with how it went; ones it did not get to are left out so they stay due. */
+  hostedChecks?: HostedCheck[]
+}
+
+/** A skill ClawHub or SkillHub hosts, picked from discovery.db for a hosted-skills source to read. */
+export interface HostedCandidate {
+  site: SkillHostSite
+  /** The listing's id in discovery.db: ClawHub `owner/slug`, SkillHub `@namespace/slug` (lowercase). */
+  listingId: string
+  /** The site's own installs figure, when it reports one above zero. */
+  installs: number | null
+}
+
+export interface HostedCheck {
+  site: SkillHostSite
+  listingId: string
+  /** ok, `excluded: <reason>` or error. */
+  status: string
+  /** The version read, for ok. */
+  version: string | null
 }
 
 export interface SourceContext {
@@ -74,6 +97,8 @@ export interface SourceContext {
   }
   /** Skill repos picked from the discovery queue for this run, and skills.sh install counts. */
   skills?: { repos: string[]; installs: Map<string, number> }
+  /** Hosted skills picked from discovery.db for this run; absent without discovery. */
+  hosted?: HostedCandidate[]
   log: (message: string) => void
 }
 

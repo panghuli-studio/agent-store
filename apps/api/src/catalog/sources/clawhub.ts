@@ -101,6 +101,7 @@ export function clawhubSource(options: ClawHubOptions = {}): DiscoverySource {
       ...clawhubIdentity(base, owner, slug),
       name: str(item['displayName']) ?? slug,
       githubRepo: null,
+      version: (isRecord(item['latestVersion']) ? str(item['latestVersion']['version']) : null) ?? (isRecord(item['tags']) ? str(item['tags']['latest']) : null),
       board,
       rank,
       metrics,

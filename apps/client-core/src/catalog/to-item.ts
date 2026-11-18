@@ -35,6 +35,16 @@ function base(r: ResourceDetail, slug: string): Omit<BaseItem, 'category' | 'com
 export function toItem(r: ResourceDetail, slug: string): Item {
   if (r.kind === 'skill') {
     const skillMd = r.files.find(f => f.path === 'SKILL.md')
+    if (r.hosted) {
+      const item: SkillItem = {
+        ...base(r, slug),
+        category: 'skill',
+        compatibleWith: BOTH,
+        contentUrl: skillMd?.downloadUrl ?? '',
+        hosted: { site: r.hosted.site, listingId: r.hosted.listingId, version: r.hosted.version, url: r.hosted.url, files: r.files },
+      }
+      return item
+    }
     const item: SkillItem = {
       ...base(r, slug),
       category: 'skill',

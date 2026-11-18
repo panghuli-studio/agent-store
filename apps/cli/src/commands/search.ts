@@ -3,7 +3,7 @@ import { formatDownloads } from '../utils/format'
 
 const KINDS: readonly string[] = ['skill', 'mcp', 'provider']
 
-const SOURCE: Record<string, string> = { 'mcp-registry': 'MCP Registry', github: 'GitHub', builtin: 'built-in' }
+const SOURCE: Record<string, string> = { 'mcp-registry': 'MCP Registry', github: 'GitHub', clawhub: 'ClawHub', skillhub: 'SkillHub', builtin: 'built-in' }
 
 export async function runSearch(
   engine: Engine,

@@ -6,7 +6,7 @@ const CATEGORIES: readonly Category[] = ['provider', 'skill', 'mcp']
 // Same shape the registry enforces on package slugs.
 const SLUG = /^[a-z0-9-]{1,128}$/
 // A catalog id: `<site>:<upstream id>`, printable, no spaces.
-const ID = /^(mcp-registry|github|builtin):[A-Za-z0-9._~@/-]{1,300}$/
+const ID = /^(mcp-registry|github|clawhub|skillhub|builtin):[A-Za-z0-9._~@/-]{1,300}$/
 
 export type InvalidReason = 'malformed' | 'scheme' | 'action' | 'slug' | 'category'
 

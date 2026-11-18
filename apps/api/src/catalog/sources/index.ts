@@ -3,6 +3,7 @@ import type { CatalogSource } from '../types'
 import type { SearchSource } from '../search-sources'
 import { clawhubSearch, clawhubSource } from './clawhub'
 import { githubSkillsSource } from './github-skills'
+import { hostedSkillsSource } from './hosted-skills'
 import { mcpRegistrySource } from './mcp-registry'
 import { builtinProvidersSource } from './providers'
 import { skillhubSearch, skillhubSource } from './skillhub'
@@ -11,7 +12,7 @@ import { skillsShSource } from './skills-sh'
 
 /** Every source the sync runs, in order. A new site is one more entry here. */
 export function defaultSources(): CatalogSource[] {
-  return [builtinProvidersSource(), mcpRegistrySource(), githubSkillsSource()]
+  return [builtinProvidersSource(), mcpRegistrySource(), githubSkillsSource(), hostedSkillsSource('clawhub'), hostedSkillsSource('skillhub')]
 }
 
 /** Skill directories read for discovery and popularity before the catalog sources run. */

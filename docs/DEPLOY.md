@@ -71,7 +71,17 @@ SkillsMP 没有接入：公开接口必须带关键词或作者，不支持通�
 - skills.sh：`github:<owner/repo>/<skillId>`，同一仓库的不同技能各是一条。
 - ClawHub：`clawhub:<owner>/<slug>`（slug 在不同作者之间会重复，所以带作者）。
 - SkillHub：来源为 `clawhub` 且 `upstream_url` 指向 clawhub.ai 的条目是 ClawHub 的转收录，取对应的 `clawhub:<owner>/<slug>`；其余为 `skillhub:<namespace>/<slug>`。
-- skills.sh 的条目在仓库扫描后按「同一仓库内 SKILL.md 的 name 或目录名」关联到 `catalog.db` 的 `resources.id`（`listings.resource_id`）。ClawHub、SkillHub 上托管、不在 GitHub 的技能只记录在 `discovery.db`，不进 `catalog.db`。
+- skills.sh 的条目在仓库扫描后按「同一仓库内 SKILL.md 的 name 或目录名」关联到 `catalog.db` 的 `resources.id`（`listings.resource_id`）。ClawHub、SkillHub 自己托管、不在 GitHub 的技能由下面的托管技能来源读进 `catalog.db`，`resources.id` 就是小写的 `skill_key`。
+
+### 托管技能（`clawhub-skills`、`skillhub-skills`）
+
+只在 ClawHub 或只在 SkillHub 托管的技能也进目录，`GET /api/resources` 和 GitHub 技能一起返回，`origin.site` 是 `clawhub` / `skillhub`，`homepageUrl` 和 `origin.url` 是站点的正式页面（`https://clawhub.ai/<owner>/skills/<slug>`、`https://skillhub.cn/skills/<slug>`）。
+
+- **选哪些**：`discovery.db` 里该站点自己的 `skill_key`（`clawhub:` 或 `skillhub:` 开头；SkillHub 转收录 ClawHub 的条目不算 SkillHub 的），且同一 `skill_key` 的任何条目都没有指向 GitHub 仓库。每站每轮最多读 100 条（`hostedBudget`）：先读从没读过的（按下载量），再读站点列出的版本和上次读到的不同的，至少四分之一留给最久没读过的，用来发现下架和被标记。读的结果记在 `listings.content_checked_at`、`content_version`、`content_status`。
+- **读什么**：ClawHub `GET /api/v1/skills/<slug>?ownerHandle=` 取最新版本和审核状态，`/versions/<version>?ownerHandle=` 取文件清单（路径、大小、SHA-256）；SkillHub `GET /api/v1/skills/<slug>` 取最新版本、命名空间和安全扫描，`/files?version=` 取文件清单。然后下载 SKILL.md，核对大小和 SHA-256，解析 frontmatter。
+- **不收录**：SKILL.md 下载不到、与清单的 SHA-256 不符、不是 UTF-8、frontmatter 缺 `name` 或 `description`；没有文件清单（ClawHub 对 GitHub 来源的技能只给转交信息）、某个文件缺 SHA-256 或大小、路径不安全或大小写重复、没有 SKILL.md、超过 2000 个文件或 50 MB；ClawHub 标记为可疑或恶意；SkillHub 的转收录、`upstream_url` 指向 GitHub、任一安全扫描不是 `benign`。已收录的条目再读时落入这些情况就标为不可用；站点出错或限流时保持上一版。
+- **详情格式**（`HostedSkillResourceDetail`，`packages/types/src/resources.ts`）：没有 `repo`，有 `hosted`（站点、`listingId`、`slug`、`owner`、版本、正式页面）和 `files`（`path`、`size`、`sha256`、`downloadUrl`）。`downloadUrl` 是站点按版本取单个文件的接口（ClawHub `/api/v1/skills/<slug>/file?ownerHandle=&version=&path=`，SkillHub `/api/v1/skills/<slug>/file?version=&path=`，后者 302 到腾讯云存储），不存进 `catalog.db`，读时重建。
+- **安装**：桌面客户端和 `aas` 逐个下载文件，每个文件的大小和 SHA-256 都和清单一致才写进技能库，有一个不符就什么都不装（`apps/client-core/src/skills/store.ts`）。安装预览写明来源站点和逐个核对 SHA-256。
 
 **热度口径**：每个站点、每种口径单独保存，不跨站相加，也不把不同口径相加。仓库的 GitHub 星标只在 `catalog.db` 里，不算单个技能的热度。热度只表示有人在装，不代表质量或安全。
 

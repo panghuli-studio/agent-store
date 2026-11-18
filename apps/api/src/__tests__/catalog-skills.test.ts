@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { ResourceSummary, SkillResourceDetail } from '@as/types'
+import type { ResourceSummary, GitHubSkillResourceDetail } from '@as/types'
 import { findSkillDirs, githubSkillsSource, type TreeEntry } from '../catalog/sources/github-skills'
 import type { SourceContext } from '../catalog/types'
 import { ANTHROPIC_SKILLS_SHA, fakeFetch, fixtureJson, githubRoutes, octokitWith, type Route } from './helpers/upstream-fixtures'
 
-type Skill = Omit<SkillResourceDetail, keyof ResourceSummary>
+type Skill = Omit<GitHubSkillResourceDetail, keyof ResourceSummary>
 
 const blob = (path: string): TreeEntry => ({ path, mode: '100644', type: 'blob', sha: 'x' })
 

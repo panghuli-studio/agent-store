@@ -7,7 +7,7 @@ import { createHash } from 'crypto'
 import { lstat, mkdir, mkdtemp, readdir, readFile, readlink, rename, rm, writeFile } from 'fs/promises'
 import { join, relative } from 'path'
 import yaml from 'js-yaml'
-import type { Item, SkillFile, SkillItem } from '@as/types'
+import type { HostedSkillSource, Item, SkillFile, SkillItem } from '@as/types'
 import { assertSafeSlug } from '../paths'
 import { extractSkillDir, writeSkillEntries, type SkillEntry } from './tar'
 
@@ -17,6 +17,8 @@ export interface SkillMarker {
   slug: string
   version: string
   source: { repo: string; ref: string; resolvedSha: string; path: string } | null
+  /** Set for a skill installed from ClawHub or SkillHub (then `source` is null). */
+  hosted?: { site: string; listingId: string; version: string }
   contentHash: string
   /**
    * Claude names a skill by its directory, Codex by its frontmatter `name`.
@@ -197,13 +199,52 @@ async function fetchFiles(files: SkillFile[], dest: string): Promise<void> {
   await writeSkillEntries(entries, dest, 'skill files')
 }
 
+/** Thrown when a hosted skill's file does not match the size or SHA-256 the site published. */
+export class SkillIntegrityError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SkillIntegrityError'
+  }
+}
+
+const SHA256 = /^[0-9a-f]{64}$/
+
+/**
+ * Downloads a hosted skill version's files and writes them only when every one has the
+ * size and SHA-256 the site published; one mismatch and nothing is written.
+ */
+async function fetchHostedFiles(hosted: HostedSkillSource, dest: string): Promise<void> {
+  const files = hosted.files
+  if (files.length === 0) throw new Error(`${hosted.listingId}: the skill lists no files`)
+  if (files.length > MAX_FILES) throw new Error(`the skill has ${files.length} files, over the ${MAX_FILES} limit`)
+  const entries: SkillEntry[] = new Array(files.length)
+  let next = 0
+  const worker = async () => {
+    while (next < files.length) {
+      const i = next++
+      const f = files[i]
+      if (!/^https:\/\//.test(f.downloadUrl)) throw new Error(`${f.path}: download URL must be https`)
+      if (!SHA256.test(f.sha256)) throw new SkillIntegrityError(`${f.path}: no valid SHA-256 to check against`)
+      const data = await download(f.downloadUrl)
+      if (data.length !== f.size) throw new SkillIntegrityError(`${f.path}: expected ${f.size} bytes, got ${data.length}`)
+      const got = createHash('sha256').update(data).digest('hex')
+      if (got !== f.sha256) throw new SkillIntegrityError(`${f.path}: SHA-256 mismatch (expected ${f.sha256}, got ${got})`)
+      entries[i] = { rel: f.path, type: 'file', mode: 0o644, linkname: '', data }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(FETCH_CONCURRENCY, files.length) }, worker))
+  await writeSkillEntries(entries, dest, 'skill files')
+}
+
 /**
  * Downloads the skill's whole directory into `dest` (an empty directory) and checks
  * it is a skill: SKILL.md with a frontmatter name and description.
  */
 export async function fetchSkillInto(item: SkillItem, dest: string): Promise<{ source: SkillMarker['source']; frontmatter: { name: string; description: string } }> {
   let source: SkillMarker['source'] = null
-  if (item.source && item.files?.length && /^[0-9a-f]{40}$/.test(item.source.ref)) {
+  if (item.hosted) {
+    await fetchHostedFiles(item.hosted, dest)
+  } else if (item.source && item.files?.length && /^[0-9a-f]{40}$/.test(item.source.ref)) {
     await fetchFiles(item.files, dest)
     source = { repo: item.source.repo, ref: item.source.ref, resolvedSha: item.source.ref, path: item.source.dir }
   } else if (item.source) {
@@ -252,6 +293,7 @@ export async function installSkillContent(
       slug: item.slug,
       version: item.version,
       source,
+      ...(item.hosted ? { hosted: { site: item.hosted.site, listingId: item.hosted.listingId, version: item.hosted.version } } : {}),
       contentHash: await contentHash(stage),
       // A reinstall keeps the directory name the skill is already deployed under.
       runtimeNames: { claude: marker?.runtimeNames.claude ?? deployDirName(item.slug, fm.name), codex: fm.name },

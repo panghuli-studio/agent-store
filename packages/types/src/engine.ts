@@ -366,7 +366,7 @@ export interface InstallOutcome extends InstallResult {
 export interface Engine {
   /** One page of the aggregated catalog (/api/resources); the last cached first page when the API is down. */
   search(query: string, options?: SearchOptions): Promise<CatalogSearchResult>
-  /** A catalog resource by id (`mcp-registry:…`, `github:…`, `builtin:…`) or by slug or name. */
+  /** A catalog resource by id (`mcp-registry:…`, `github:…`, `clawhub:…`, `skillhub:…`, `builtin:…`) or by slug or name. */
   getResource(ref: string, options?: { kind?: ResourceKind }): Promise<CatalogResourceDetail>
   /**
    * Installs a catalog resource, by id or by slug. Skills are deployed here too;

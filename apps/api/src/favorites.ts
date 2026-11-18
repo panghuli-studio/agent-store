@@ -10,7 +10,7 @@ import type { SearchSupplement } from './catalog/supplement'
 export const MAX_FAVORITES = 500
 
 // A catalog id: `<site>:<upstream id>`, the same shape the desktop client accepts in an install link.
-const ID = /^(mcp-registry|github|builtin):[A-Za-z0-9._~@/-]{1,300}$/
+const ID = /^(mcp-registry|github|clawhub|skillhub|builtin):[A-Za-z0-9._~@/-]{1,300}$/
 
 export interface FavoriteDeps {
   db: (c: Context) => Database

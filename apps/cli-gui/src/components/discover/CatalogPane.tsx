@@ -160,7 +160,8 @@ export function CatalogPane({
   if (when) facts.push([t('f.updated'), new Date(when).toLocaleDateString()])
   if (resource.installs != null) facts.push([t('f.installs'), formatInstalls(resource.installs)])
   if (resource.stars != null) facts.push([t('f.stars'), formatInstalls(resource.stars)])
-  const source = resource.kind === 'skill' ? resource.repo.url : resource.homepageUrl
+  // A hosted skill links to its canonical listing on ClawHub or SkillHub.
+  const source = resource.kind === 'skill' ? (resource.repo?.url ?? resource.hosted?.url ?? null) : resource.homepageUrl
   facts.push([
     t('f.source'),
     source ? (

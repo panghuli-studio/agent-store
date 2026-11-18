@@ -8,7 +8,7 @@ export const STORE_ORIGINS = ['https://agent-store.panghuli.tech', 'https://agen
 export const MAX_IDS = 100
 
 // The catalog id shape the store and the desktop client's install links use.
-const ID = /^(mcp-registry|github|builtin):[A-Za-z0-9._~@/-]{1,300}$/
+const ID = /^(mcp-registry|github|clawhub|skillhub|builtin):[A-Za-z0-9._~@/-]{1,300}$/
 
 export interface LocalApiOptions {
   origins: readonly string[]
