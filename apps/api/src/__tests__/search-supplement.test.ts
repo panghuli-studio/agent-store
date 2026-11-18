@@ -758,6 +758,31 @@ describe('repo scans', () => {
     })
   })
 
+  for (const failed of [ACME_SKILLS.slice(0, 1), ACME_SKILLS]) {
+    test(`a rescan with ${failed.length} failed downloads preserves stored skills across restart and catalog swap`, async () => {
+      const answers = searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')) })
+      await settle(supplement(fakeFetch(acmeRoutes, answers), { sources: both }), 'terraform')
+      advance(25 * HOUR)
+      const broken: Route = (url) => url.hostname === 'raw.githubusercontent.com'
+        && failed.some((name) => url.pathname.endsWith(`/${name}/SKILL.md`))
+        ? new Response('unavailable', { status: 503 }) : undefined
+      const logs: Record<string, unknown>[] = []
+      const f = fakeFetch(broken, acmeRoutes, searchRoutes({
+        clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')),
+      }))
+      const s = supplement(f, { sources: both, log: (e) => logs.push(e) })
+      await settle(s, 'terraform infrastructure')
+      expect(logs.find((e) => e['message'] === 'search supplement')).toMatchObject({
+        repos: [{ repo: 'acme/tools', status: 'partial', skills: ACME_SKILLS.length - failed.length }],
+      })
+      for (const id of [ACME_PLAN, ACME_DRIFT]) expect(s.resource(id)?.id).toBe(id)
+      for (const c of connections.splice(0)) c.close()
+      reader.open(catalogV1b)
+      const restarted = supplement(fakeFetch(), { sources: both })
+      for (const id of [ACME_PLAN, ACME_DRIFT]) expect(restarted.resource(id)?.id).toBe(id)
+    })
+  }
+
   test('a failing scan is logged with its error and no credentials; the repo waits before it is tried again', async () => {
     const broken: Route = (url) => (url.hostname === 'api.github.com' ? json({ message: 'Server Error' }, 502) : undefined)
     const answers = searchRoutes({ clawhub: clawhubOk(), skillsmp: skillsmpOk(skillsmpHit('acme/tools', 'terraform-plan')) })

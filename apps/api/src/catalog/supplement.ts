@@ -512,7 +512,8 @@ export class SearchSupplement {
     }
     try {
       const scan = await scanRepo(github, this.fetchImpl, repo, new Map(), { maxSkills: this.c.scanMaxSkills, named: new Set(w.skills) })
-      this.o.store.saveResources(repo, scan.records, this.now().toISOString(), { replace: !scan.subset })
+      // A failed download does not mean the previously validated skill disappeared.
+      this.o.store.saveResources(repo, scan.records, this.now().toISOString(), { replace: !scan.subset && !scan.skipped[DOWNLOAD_FAILED] })
       const status = scan.skipped[DOWNLOAD_FAILED] ? 'partial' : scan.records.length === 0 ? 'no skills' : scan.subset ? 'named skills' : 'scanned'
       return mark({ repo, status, skills: scan.records.length })
     } catch (e) {

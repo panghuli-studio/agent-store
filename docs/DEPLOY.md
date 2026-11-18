@@ -265,3 +265,27 @@ make db-reset  # 删掉本地 app.db 重建
 推 `v*` tag 后，`release` 工作流构建 macOS（通用版 .dmg）、Windows（.exe / .msi）和 Linux（.deb / .rpm / .AppImage）安装包，发布到同名的 GitHub Release。版本号写在 `apps/cli-gui/src-tauri/tauri.conf.json` 和 `Cargo.toml`，打 tag 前先改。
 
 网页商店读最新 Release 的文件列表（`apps/store/lib/latest-release.ts`，缓存 5 分钟）；`/download/<目标>` 跳到对应的安装包，取不到时跳到发布页。
+
+### 搜索补充发现验收记录（2026-11-18，#152）
+
+- 测试环境 `GET /api/discovery/export` 返回 41 条发现、6 个仓库；
+  `nousresearch/hermes-agent` 的最近扫描时间是 2026-11-14T13:38:58.504Z，
+  状态为 `too large`。这证实早期外链结果触发了大仓库上限，不能据此推断为缺少令牌。
+  当前代码已支持大仓库按技能目录名扫描，以及失败仓库让出扫描名额（#218）。
+- [定时同步 44212628805](https://github.com/panghuli-studio/agent-store/actions/runs/44212628805)
+  成功读取非空导出：41 listings、6 repos、0 skipped；重复导入新增数均为 0。
+  测试 API 的 `/api/resources?q=cli-anything-obsidian&kind=skill` 已能返回
+  `github:hkuds/cli-anything/cli-anything-obsidian`，该记录也存在于 SkillsMP 发现导出中。
+  这证明发现仓库中的技能已进入发布目录；不证明该仓库只由搜索发现。
+- 本次再次请求 `obsidian daily notes skill` 返回 `found`、`partial: true`，
+  只有外链。公开响应不包含各站点失败原因；仍需部署侧日志确认这一次 SkillsMP
+  未产出结果的原因，不能把历史 `too large` 当作此次失败原因。
+- 回归测试位于 `apps/api/src/__tests__/search-supplement.test.ts`：关闭并重开
+  app.db、替换不含新技能的 catalog、发布含相同 id 的 catalog 后交接，及非空导出
+  经同步扫描进入 catalog。补搜扫描若有 SKILL.md 下载失败，保留旧的已验证资源，
+  只更新本次成功读取的资源；完整扫描才删除仓库中已消失的技能。
+- 线上进程重启验收尚未执行：重启属于部署操作，需部署侧授权及访问；
+  上述进程重建和 catalog 交接测试不能替代真实持久卷重启验收。
+- UI 当前仅有深色主题（#159）；验收矩阵为中文/英文 × 390/820/1440px。
+  `store-screenshots` 工作流包含补搜 offer/searching/found/none/unavailable 状态；
+  这些是明确标记的预览数据，不能替代真实 API 流程验收。
