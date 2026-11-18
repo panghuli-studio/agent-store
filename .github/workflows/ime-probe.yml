@@ -1,0 +1,39 @@
+name: Linux IME presentation measurements
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'test/desktop-linux/ime/**'
+      - '.github/workflows/ime-probe.yml'
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        session: [x11, wayland]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GNOME and CJK input engines
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnome-shell xvfb xdotool x11-utils imagemagick dbus-x11 python3-gi gir1.2-webkit2-4.1 ibus ibus-gtk3 ibus-libpinyin ibus-anthy ibus-hangul fonts-noto-cjk locales mesa-utils
+          sudo locale-gen zh_CN.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8
+      - name: Record stack versions
+        run: |
+          mkdir -p out
+          dpkg-query -W gnome-shell mutter-common libgtk-3-0 libwebkit2gtk-4.1-0 ibus ibus-gtk3 ibus-libpinyin ibus-anthy ibus-hangul xvfb > out/versions.txt
+          uname -a >> out/versions.txt
+      - name: Measure native presentation and composition
+        run: |
+          mkdir -p "$RUNNER_TEMP/ime-home"
+          HOME="$RUNNER_TEMP/ime-home" timeout --kill-after=10s 8m dbus-run-session -- bash test/desktop-linux/ime/session.sh '${{ matrix.session }}' "$PWD/out"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ime-${{ matrix.session }}
+          path: out/
+          retention-days: 14
