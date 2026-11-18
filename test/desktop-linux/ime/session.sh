@@ -3,6 +3,8 @@
 set -euxo pipefail
 mode=$1
 out=$2
+rendering=$3
+export IME_SESSION="$mode"
 mkdir -p "$out"
 pids=()
 cleanup() {
@@ -29,12 +31,16 @@ if [ "$mode" = wayland ]; then
   export WAYLAND_DISPLAY=wayland-0 GDK_BACKEND=wayland
   for _ in {1..100}; do [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && break; sleep .2; done
   test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
-else
+elif [ "$mode" = x11 ]; then
   gnome-shell --x11 >"$out/gnome.log" 2>&1 & pids+=("$!")
-  export GDK_BACKEND=x11
 fi
+if [ "$mode" != wayland ]; then export GDK_BACKEND=x11; fi
 sleep 5
-kill -0 "${pids[1]}"
+if [ "$mode" != bare ]; then kill -0 "${pids[1]}"; fi
+if [ "$rendering" = disabled ]; then
+  export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+fi
+{ env | sort | grep -E '^(LANG|LC_|DISPLAY|WAYLAND|GDK_|GTK_|XMODIFIERS|WEBKIT_|LIBGL_)' || true; glxinfo -B; } >"$out/rendering.txt" 2>&1
 ibus-daemon --xim --replace >"$out/ibus.log" 2>&1 & pids+=("$!")
 for _ in {1..50}; do ibus list-engine >"$out/engines.txt" 2>/dev/null && break; sleep .2; done
 export XMODIFIERS=@im=ibus
@@ -52,17 +58,29 @@ for language in zh ja ko; do
     page=$!; pids+=("$page")
     sleep 4
     kill -0 "$page"
+    if [ "$mode" = bare ]; then
+      xdotool search --onlyvisible --name 'IME presentation probe' windowfocus
+    else
+      # Shell starts in overview; DOM autofocus does not activate a native window.
+      xdotool key Escape Escape alt+Tab
+      sleep 1
+    fi
     # XTEST enters the nested compositor too; events in JSONL prove whether input reached GTK.
     ibus engine "$engine" >"$out/$name-engine.log" 2>&1 || echo 'engine selection failed' >>"$out/$name-engine.log"
     ibus engine >>"$out/$name-engine.log" 2>&1 || echo 'no active engine' >>"$out/$name-engine.log"
     xdotool type --clearmodifiers --delay 150 "$keys"
     for frame in 1 2 3; do
       sleep 2
+      date +%s.%N >"$out/$name-$frame.time"
       import -display :99 -window root "$out/$name-$frame.png"
+      tesseract "$out/$name-$frame.png" "$out/$name-$frame" 2>"$out/$name-$frame-ocr.log"
     done
     kill "$page"
     wait "$page" || true
     # Do not retain a reaped PID that might be reused during the next iteration.
     unset 'pids[${#pids[@]}-1]'
+    if [ -x /usr/bin/app ]; then
+      LANG="$locale" LC_ALL="$locale" GTK_IM_MODULE="$module" python3 test/desktop-linux/ime/package.py "$out/$name-package" "$keys"
+    fi
   done
 done

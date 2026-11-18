@@ -14,14 +14,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        session: [x11, wayland]
+        session: [bare, x11, wayland]
+        rendering: [default, disabled]
     steps:
       - uses: actions/checkout@v4
       - name: Install GNOME and CJK input engines
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gnome-shell xwayland adwaita-icon-theme gnome-control-center xvfb xdotool x11-utils imagemagick dbus-x11 python3-gi gir1.2-webkit2-4.1 ibus ibus-gtk3 ibus-libpinyin ibus-anthy ibus-hangul fonts-noto-cjk locales mesa-utils
+          sudo apt-get install -y --no-install-recommends gnome-shell xwayland adwaita-icon-theme gnome-control-center xvfb xdotool x11-utils imagemagick dbus-x11 python3-gi gir1.2-webkit2-4.1 webkit2gtk-driver ibus ibus-gtk3 ibus-libpinyin ibus-anthy ibus-hangul fonts-noto-cjk locales mesa-utils tesseract-ocr
           sudo locale-gen zh_CN.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8
+      - name: Install the published desktop package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.4.0 --repo "$GITHUB_REPOSITORY" --pattern 'Agent.Store_0.4.0_amd64.deb' --dir "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          echo 'd6c00bdca62956af8d7b4389f29825b22c7709ded8b89427ac812c65bea5bb36  Agent.Store_0.4.0_amd64.deb' | sha256sum -c
+          sudo apt-get install -y ./Agent.Store_0.4.0_amd64.deb
       - name: Record stack versions
         run: |
           mkdir -p out
@@ -30,10 +39,13 @@ jobs:
       - name: Measure native presentation and composition
         run: |
           mkdir -p "$RUNNER_TEMP/ime-home"
-          HOME="$RUNNER_TEMP/ime-home" timeout --kill-after=10s 8m dbus-run-session -- bash test/desktop-linux/ime/session.sh '${{ matrix.session }}' "$PWD/out"
+          HOME="$RUNNER_TEMP/ime-home" timeout --kill-after=10s 12m dbus-run-session -- bash test/desktop-linux/ime/session.sh '${{ matrix.session }}' "$PWD/out" '${{ matrix.rendering }}'
+      - name: Summarize measurements (no inferred pass from missing data)
+        if: always()
+        run: python3 test/desktop-linux/ime/summarize.py out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ime-${{ matrix.session }}
+          name: ime-${{ matrix.session }}-${{ matrix.rendering }}
           path: out/
           retention-days: 7

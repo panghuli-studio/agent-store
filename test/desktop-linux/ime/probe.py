@@ -21,7 +21,7 @@ view.load_html('''<!doctype html><meta charset="utf-8">
 const field = document.getElementById('i'), frame = document.getElementById('frame');
 let ticks = 0;
 function report(kind) { window.webkit.messageHandlers.probe.postMessage(JSON.stringify({
-  kind, ticks, text: field.value, active: document.activeElement === field})); }
+  kind, ticks, text: field.value, active: document.activeElement === field, focused: document.hasFocus()})); }
 for (const kind of ['focus', 'compositionstart', 'compositionupdate', 'compositionend', 'input'])
   field.addEventListener(kind, () => report(kind));
 setInterval(() => { frame.textContent = 'FRAME ' + (++ticks);
