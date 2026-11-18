@@ -46,7 +46,6 @@ for language in zh ja ko; do
   esac
   gsettings set org.gnome.desktop.input-sources sources "[('ibus', '$engine')]"
   sleep 2
-  ibus engine >"$out/$language-selected-engine.txt"
   for module in ibus xim gtk-im-context-simple; do
     name="$language-$module"
     LANG="$locale" LC_ALL="$locale" GTK_IM_MODULE="$module" python3 test/desktop-linux/ime/probe.py >"$out/$name.jsonl" 2>"$out/$name.log" &
@@ -54,6 +53,8 @@ for language in zh ja ko; do
     sleep 4
     kill -0 "$page"
     # XTEST enters the nested compositor too; events in JSONL prove whether input reached GTK.
+    ibus engine "$engine" >"$out/$name-engine.log" 2>&1 || echo 'engine selection failed' >>"$out/$name-engine.log"
+    ibus engine >>"$out/$name-engine.log" 2>&1 || echo 'no active engine' >>"$out/$name-engine.log"
     xdotool type --clearmodifiers --delay 150 "$keys"
     for frame in 1 2 3; do
       sleep 2
