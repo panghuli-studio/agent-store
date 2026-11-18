@@ -289,3 +289,17 @@ make db-reset  # 删掉本地 app.db 重建
 - UI 当前仅有深色主题（#159）；验收矩阵为中文/英文 × 390/820/1440px。
   `store-screenshots` 工作流包含补搜 offer/searching/found/none/unavailable 状态；
   这些是明确标记的预览数据，不能替代真实 API 流程验收。
+
+本轮修复的 [unit 检查](https://github.com/panghuli-studio/agent-store/actions/runs/44267974124)
+已通过 API lint、类型检查和测试；新增的单个/全部下载失败、重开 app.db 和
+catalog 替换回归均通过。再次请求 `obsidian cli skill` 也只返回外链，
+而 `/api/resources` 已有上述 Obsidian 技能；需要部署侧确认运行版本及对应日志，
+不能仅凭主分支实现认定线上已具备 #219 的行为。
+
+[界面截图验收 44267969312](https://github.com/panghuli-studio/agent-store/actions/runs/44267969312)
+在 Actions 中实际启动商店和带发布目录的 API，工作流已成功。
+已逐张查看 offer/searching/found/none/unavailable 的中文、英文 ×
+390/820/1440px 截图，对照 `apps/store/DESIGN.md`：说明卡片换行、移动端按钮、
+可安装行与外链行、部分结果提示均符合现有设计，未发现横向溢出或视觉偏差。
+预览模式的 unavailable 隐藏重试按钮；正常模式有重试，组件测试覆盖该交互。
+这轮没有修改界面；真实新发现从浏览器确认到可安装详情的链路仍未完成验收。
