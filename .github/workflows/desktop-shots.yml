@@ -67,7 +67,14 @@ jobs:
           name: first-launch-restore
           path: out/first-launch/
           retention-days: 14
+      - name: Disconnect repaint probe
+        if: ${{ !cancelled() }}
+        # Measurements, not checks (#233): see test/desktop-linux/disconnect-probe.sh.
+        run: |
+          mkdir -p out
+          docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/disconnect-probe.sh
       - name: Screenshots of the native window
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/shots.sh
@@ -84,7 +91,7 @@ jobs:
       - name: Result
         if: always()
         run: |
-          cat out/result.txt out/marketing/result.txt out/appimage/result.txt || true
+          cat out/probe/env.txt out/probe/result.txt out/result.txt out/marketing/result.txt out/appimage/result.txt || true
           docker logs catalog-api > out/catalog-api.log 2>&1 || true
       - uses: actions/upload-artifact@v4
         if: always()

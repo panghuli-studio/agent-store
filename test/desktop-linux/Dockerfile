@@ -47,8 +47,9 @@ RUN cd apps/cli-gui && pnpm bundle:appimage \
 
 # GNOME Keyring for the sign-in checks in shots.sh (#195). Its D-Bus activation files are moved
 # aside, so the keyring runs only once shots.sh starts it and the first checks see a desktop
-# without a Secret Service.
-RUN apt-get update && apt-get install -y --no-install-recommends gnome-keyring libsecret-tools tesseract-ocr tesseract-ocr-chi-sim xclip \
+# without a Secret Service. WebKitWebDriver and WebKitGTK's GObject bindings are for
+# disconnect-probe.sh (#233).
+RUN apt-get update && apt-get install -y --no-install-recommends gnome-keyring libsecret-tools tesseract-ocr tesseract-ocr-chi-sim xclip webkit2gtk-driver gir1.2-webkit2-4.1 \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /usr/share/dbus-1/services-disabled \
   && for f in /usr/share/dbus-1/services/*secrets* /usr/share/dbus-1/services/*keyring*; do [ -e "$f" ] && mv "$f" /usr/share/dbus-1/services-disabled/; done; true
