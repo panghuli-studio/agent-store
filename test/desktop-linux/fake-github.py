@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""A stand-in for github.com and api.github.com for the backup's GitHub sign-in (#231).
+"""A stand-in for github.com and api.github.com for the backup's GitHub sign-in (#231) and
+disconnecting from it (#233).
 
 shots.sh points AS_GITHUB_URL at http://127.0.0.1:<port> and AS_GITHUB_API_URL at
 http://127.0.0.1:<port>/api. It answers the device flow, the few REST calls the core makes,
 and Git's smart HTTP through `git http-backend` for the repositories it "creates" under
-<root>/<owner>/<name>.git, with Basic auth that only takes the token it handed out.
+<root>/<owner>/<name>.git, with Basic auth that only takes the tokens it handed out.
+
+Every approval hands out a new token, <token><n>, so revoking one leaves the others working.
+A sign-in that asked for delete_repo gets that scope, and only its token may
+DELETE /repos/<owner>/<name>. POST /credentials/revoke takes no authentication, like GitHub's.
+GET /control/revoked lists the scopes of the tokens revoked so far, never the tokens.
 
 The device flow's next answer is set with GET /control/<mode>:
   wait     authorization_pending until changed
@@ -28,6 +34,13 @@ from urllib.parse import parse_qs, urlsplit
 ROOT, PORT, TOKEN = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 LOGIN = 'me'
 state = {'mode': 'wait', 'polls': 0}
+# token -> {'scope': ..., 'revoked': bool}
+tokens = {}
+
+
+def live(token):
+    t = tokens.get(token)
+    return t is not None and not t['revoked']
 lock = threading.Lock()
 
 
@@ -75,9 +88,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.route('POST')
 
+    def do_DELETE(self):
+        self.route('DELETE')
+
     def route(self, method):
         url = urlsplit(self.path)
         path = url.path
+        if path == '/control/revoked':
+            with lock:
+                return self.send(200, {'revoked': sorted(t['scope'] for t in tokens.values() if t['revoked'])})
         if path.startswith('/control/'):
             mode = path[len('/control/'):]
             with lock:
@@ -92,19 +111,25 @@ class Handler(BaseHTTPRequestHandler):
             form = parse_qs(self.body().decode())
             if not form.get('client_id'):
                 return self.send(200, {'error': 'unauthorized_client'})
+            delete = 'delete_repo' in (form.get('scope') or [''])[0]
             return self.send(200, {
-                'device_code': 'fake-device-code', 'user_code': 'WDJB-MJHT',
+                'device_code': 'fake-delete-code' if delete else 'fake-device-code', 'user_code': 'HQLC-RT4P' if delete else 'WDJB-MJHT',
                 'verification_uri': 'https://github.com/login/device', 'expires_in': 900, 'interval': 1,
             })
         if path == '/login/oauth/access_token' and method == 'POST':
-            self.body()
+            form = parse_qs(self.body().decode())
+            delete = (form.get('device_code') or [''])[0] == 'fake-delete-code'
             with lock:
                 state['polls'] += 1
                 mode = state['mode']
                 if mode == 'auto':
                     mode = 'approve' if state['polls'] > 2 else 'wait'
             if mode == 'approve':
-                return self.send(200, {'access_token': TOKEN, 'token_type': 'bearer', 'scope': 'repo'})
+                scope = 'repo,delete_repo' if delete else 'repo'
+                with lock:
+                    token = f'{TOKEN}{len(tokens) + 1:02d}'
+                    tokens[token] = {'scope': scope, 'revoked': False}
+                return self.send(200, {'access_token': token, 'token_type': 'bearer', 'scope': scope})
             if mode == 'deny':
                 return self.send(200, {'error': 'access_denied'})
             return self.send(200, {'error': 'authorization_pending'})
@@ -115,7 +140,19 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(404, {'message': 'Not Found'})
 
     def api(self, method, path, query):
-        if self.headers.get('Authorization') != f'Bearer {TOKEN}':
+        if path == '/credentials/revoke' and method == 'POST':
+            # GitHub refuses an authenticated call here.
+            if self.headers.get('Authorization'):
+                self.body()
+                return self.send(403, {'message': 'Forbidden'})
+            with lock:
+                for c in json.loads(self.body() or b'{}').get('credentials', []):
+                    if c in tokens:
+                        tokens[c]['revoked'] = True
+            return self.send(202, {})
+        auth = self.headers.get('Authorization', '')
+        bearer = auth[len('Bearer '):] if auth.startswith('Bearer ') else ''
+        if not live(bearer):
             return self.send(401, {'message': 'Bad credentials'})
         if path == '/user':
             return self.send(200, {'login': LOGIN})
@@ -132,6 +169,11 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.isdir(repo_dir(full)):
                 return self.send(404, {'message': 'Not Found'})
             rest = parts[3:]
+            if not rest and method == 'DELETE':
+                if 'delete_repo' not in tokens[bearer]['scope']:
+                    return self.send(403, {'message': 'Must have admin rights to Repository.'})
+                shutil.rmtree(repo_dir(full))
+                return self.send(204)
             if not rest:
                 return self.send(200, {'full_name': full, 'private': private_of(full), 'html_url': f'https://github.com/{full}'})
             if rest == ['branches']:
@@ -151,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
                 password = base64.b64decode(auth[6:]).decode().split(':', 1)[1]
             except Exception:
                 password = ''
-        if password != TOKEN:
+        if not live(password):
             return self.send(401, b'', {'WWW-Authenticate': 'Basic realm="fake-github"'})
         env = {
             **os.environ,

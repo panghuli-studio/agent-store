@@ -27,6 +27,10 @@ check() { if eval "$2"; then log "ok: $1"; else log "FAIL: $1"; failed=1; fi; }
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
 export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+# The harness types ASCII and needs no input method service. GTK selects XIM for zh,
+# ja, ko and th; on this Xvfb/WebKitGTK stack its zh path leaves stale native pixels
+# after input focus, even with IBus. The simple context passes (disconnect-probe.sh, #233).
+export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
 sleep 2
 eval "$(dbus-launch --sh-syntax)"

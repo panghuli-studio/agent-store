@@ -15,6 +15,8 @@ process.env['AS_CLAUDE_BIN'] = ''
 process.env['AS_CODEX_BIN'] = ''
 
 const TOKEN = 'gho_FAKEtoken0123456789abcdefABCDEF0123'
+/** What the deletion sign-in (scope `repo delete_repo`) is given. */
+const DEL_TOKEN = 'gho_FAKEdelete0123456789abcdefABCDEF01'
 const API = 'https://api.gh.test'
 
 let root: string
@@ -56,7 +58,15 @@ class FakeGitHub {
   repos = new Map<string, { private: boolean }>()
   calls: Array<{ url: string; method: string; auth?: string; body?: string }> = []
   failCreate = false
+  /** Granted to the deletion sign-in. */
+  deleteScope = 'repo,delete_repo'
+  /** Who approves a sign-in. */
+  login = 'me'
+  revoked = new Set<string>()
+  revokeStatus = 202
+  deleteStatus: number | null = null
   private codes = 0
+  private scopes = new Map<string, string>()
 
   path(fullName: string) {
     return join(web, `${fullName}.git`)
@@ -85,18 +95,29 @@ class FakeGitHub {
     const headers = (init.headers ?? {}) as Record<string, string>
     this.calls.push({ url, method: init.method ?? 'GET', auth: headers['Authorization'], body: typeof init.body === 'string' ? init.body : undefined })
     if (url === `${web}/login/device/code`) {
-      return this.json(200, { device_code: `dc-${++this.codes}`, user_code: 'WDJB-MJHT', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })
+      const code = `dc-${++this.codes}`
+      this.scopes.set(code, new URLSearchParams(String(init.body)).get('scope') ?? '')
+      return this.json(200, { device_code: code, user_code: 'WDJB-MJHT', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })
     }
     if (url === `${web}/login/oauth/access_token`) {
       const g = this.grants.length > 1 ? this.grants.shift()! : this.grants[0]
-      if (g === 'approved') return this.json(200, { access_token: TOKEN, token_type: 'bearer', scope: this.scope })
+      const forDelete = this.scopes.get(new URLSearchParams(String(init.body)).get('device_code') ?? '')?.includes('delete_repo')
+      if (g === 'approved') return this.json(200, forDelete ? { access_token: DEL_TOKEN, token_type: 'bearer', scope: this.deleteScope } : { access_token: TOKEN, token_type: 'bearer', scope: this.scope })
       const error = { pending: 'authorization_pending', slow_down: 'slow_down', denied: 'access_denied', expired: 'expired_token' }[g]
       return this.json(200, { error, ...(g === 'slow_down' ? { interval: 10 } : {}) })
     }
     if (!url.startsWith(API)) throw new Error(`Unmocked URL: ${url}`)
-    if (headers['Authorization'] !== `Bearer ${TOKEN}`) return this.json(401, { message: 'Bad credentials' })
     const path = url.slice(API.length)
-    if (path === '/user') return this.json(200, { login: 'me' })
+    if (path === '/credentials/revoke' && init.method === 'POST') {
+      // GitHub answers 403 to an authenticated call here.
+      if (headers['Authorization']) return this.json(403, { message: 'Forbidden' })
+      if (this.revokeStatus !== 202) return this.json(this.revokeStatus, { message: 'boom' })
+      for (const c of (JSON.parse(String(init.body)) as { credentials: string[] }).credentials) this.revoked.add(c)
+      return this.json(202, {})
+    }
+    const bearer = headers['Authorization']?.replace(/^Bearer /, '') ?? ''
+    if (![TOKEN, DEL_TOKEN].includes(bearer) || this.revoked.has(bearer)) return this.json(401, { message: 'Bad credentials' })
+    if (path === '/user') return this.json(200, { login: this.login })
     if (path === '/user/repos' && init.method === 'POST') {
       if (this.failCreate) return this.json(500, { message: 'boom' })
       const body = JSON.parse(String(init.body)) as { name: string; private: boolean }
@@ -104,6 +125,13 @@ class FakeGitHub {
       return this.json(201, { full_name: `me/${body.name}`, private: body.private, html_url: `https://github.com/me/${body.name}` })
     }
     let m = /^\/repos\/(me\/[^/?]+)$/.exec(path)
+    if (m && init.method === 'DELETE') {
+      if (bearer !== DEL_TOKEN) return this.json(403, { message: 'Must have admin rights to Repository.' })
+      if (this.deleteStatus) return this.json(this.deleteStatus, { message: 'Must have admin rights to Repository.' })
+      if (!this.repos.delete(m[1])) return this.json(404, { message: 'Not Found' })
+      await rm(this.path(m[1]), { recursive: true, force: true })
+      return new Response(null, { status: 204 })
+    }
     if (m) {
       const r = this.repos.get(m[1])
       return r ? this.json(200, { full_name: m[1], private: r.private, html_url: `https://github.com/${m[1]}` }) : this.json(404, { message: 'Not Found' })
@@ -284,4 +312,179 @@ test('a failed connect keeps the sign-in for another try; a sign-in without the 
   const e2 = await d.engine.pollGitHubBackupSignIn((await d.engine.startGitHubBackupSignIn()).deviceCode).catch(e => e)
   expect(e2.reason).toBe('github-signin-needed')
   expect(existsSync(signInFile(d.aasHome))).toBe(false)
+})
+
+/** A device connected to a new GitHub backup, backed up once. */
+async function connected(gh: FakeGitHub) {
+  const d = await device(gh)
+  await d.engine.install('notes')
+  await d.engine.pollGitHubBackupSignIn((await d.engine.startGitHubBackupSignIn()).deviceCode)
+  await d.engine.connectGitHubBackup({ repo: 'new', device: 'laptop' })
+  await d.engine.backupNow()
+  return d
+}
+
+const backupFiles = (aasHome: string) => readdir(join(aasHome, 'backup'))
+const deleteFile = (aasHome: string) => join(aasHome, 'backup', 'github-delete.json')
+
+async function approveDelete(engine: EngineImpl) {
+  return engine.pollGitHubBackupDeleteSignIn((await engine.startGitHubBackupDeleteSignIn()).deviceCode)
+}
+
+test('status names the GitHub repository; disconnecting this device only asks GitHub nothing', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  expect((await engine.getBackupStatus()).github).toEqual({ login: 'me', repo: 'me/agent-store-backup' })
+  const before = gh.calls.length
+  const r = await engine.disconnectBackup()
+  expect(r).toEqual({ level: 'device', remote: `${web}/me/agent-store-backup.git`, repo: 'me/agent-store-backup' })
+  expect(gh.calls.length).toBe(before)
+  expect(existsSync(join(aasHome, 'backup'))).toBe(false)
+  expect(gh.repos.has('me/agent-store-backup')).toBe(true)
+  expect(gh.revoked.size).toBe(0)
+  expect(await engine.disconnectBackup()).toEqual({ level: 'device' })
+})
+
+test('revoke revokes the token without authenticating, then removes the local backup; the repository stays', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  const r = await engine.disconnectBackup({ level: 'revoke' })
+  expect(r).toMatchObject({
+    level: 'revoke', repo: 'me/agent-store-backup', revoked: true,
+    authorizationsUrl: `${web}/settings/connections/applications/Iv1.test-client`,
+  })
+  expect(r.repoDeleted).toBeUndefined()
+  const call = gh.calls.find(c => c.url === `${API}/credentials/revoke`)!
+  expect(call.auth).toBeUndefined()
+  expect(JSON.parse(call.body!)).toEqual({ credentials: [TOKEN] })
+  expect([...gh.revoked]).toEqual([TOKEN])
+  expect(existsSync(join(aasHome, 'backup'))).toBe(false)
+  expect(gh.repos.has('me/agent-store-backup')).toBe(true)
+  expect(JSON.stringify(r)).not.toContain(TOKEN)
+})
+
+test('a failed revocation says so and leaves everything on this device', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  const files = await backupFiles(aasHome)
+  gh.revokeStatus = 500
+  const err = await engine.disconnectBackup({ level: 'revoke' }).catch(e => e)
+  expect(err.name).toBe('BackupDisconnectError')
+  expect(err.reason).toBe('revoke-failed')
+  expect(err.message).toContain('Revoking the GitHub authorization failed')
+  expect(err.message).not.toContain(TOKEN)
+  expect(await backupFiles(aasHome)).toEqual(files)
+  expect((await engine.getBackupStatus()).connected).toBe(true)
+})
+
+test('delete needs the typed name and a delete_repo sign-in, deletes the repository, revokes both tokens, then removes the local backup', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  // Without the deletion sign-in nothing is asked of GitHub.
+  const calls = gh.calls.length
+  const noSignIn = await engine.disconnectBackup({ level: 'delete', confirm: 'me/agent-store-backup' }).catch(e => e)
+  expect(noSignIn.reason).toBe('github-signin-needed')
+  expect(gh.calls.length).toBe(calls)
+
+  const code = await engine.startGitHubBackupDeleteSignIn()
+  expect(new URLSearchParams(gh.calls.at(-1)!.body).get('scope')).toBe('repo delete_repo')
+  const approved = await engine.pollGitHubBackupDeleteSignIn(code.deviceCode)
+  expect(approved).toEqual({ status: 'approved', login: 'me', repo: 'me/agent-store-backup' })
+  expect(JSON.stringify(approved)).not.toContain(DEL_TOKEN)
+  expect((await stat(deleteFile(aasHome))).mode & 0o777).toBe(0o600)
+
+  const files = await backupFiles(aasHome)
+  const wrong = await engine.disconnectBackup({ level: 'delete', confirm: 'me/agent-store' }).catch(e => e)
+  expect(wrong.reason).toBe('confirm-mismatch')
+  expect(gh.repos.has('me/agent-store-backup')).toBe(true)
+  expect(await backupFiles(aasHome)).toEqual(files)
+
+  const r = await engine.disconnectBackup({ level: 'delete', confirm: ' Me/Agent-Store-Backup ' })
+  expect(r).toMatchObject({ level: 'delete', repo: 'me/agent-store-backup', repoDeleted: 'deleted', revoked: true })
+  expect(gh.repos.has('me/agent-store-backup')).toBe(false)
+  expect(existsSync(gh.path('me/agent-store-backup'))).toBe(false)
+  expect([...gh.revoked].sort()).toEqual([DEL_TOKEN, TOKEN].sort())
+  const order = gh.calls.filter(c => c.method === 'DELETE' || c.url.endsWith('/credentials/revoke')).map(c => c.method)
+  expect(order).toEqual(['DELETE', 'POST'])
+  expect(existsSync(join(aasHome, 'backup'))).toBe(false)
+})
+
+test('a failed deletion revokes nothing and leaves everything on this device', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  await approveDelete(engine)
+  const files = await backupFiles(aasHome)
+  gh.deleteStatus = 403
+  const err = await engine.disconnectBackup({ level: 'delete', confirm: 'me/agent-store-backup' }).catch(e => e)
+  expect(err.reason).toBe('delete-failed')
+  expect(err.message).toContain('Deleting the repository me/agent-store-backup on GitHub failed')
+  expect(err.message).toContain('admin rights')
+  expect(err.message).not.toContain(DEL_TOKEN)
+  expect(gh.revoked.size).toBe(0)
+  expect(gh.repos.has('me/agent-store-backup')).toBe(true)
+  expect(await backupFiles(aasHome)).toEqual(files)
+})
+
+test('deleted but not revoked: the error says the repository is gone, and trying again finishes', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  await approveDelete(engine)
+  gh.revokeStatus = 500
+  const err = await engine.disconnectBackup({ level: 'delete', confirm: 'me/agent-store-backup' }).catch(e => e)
+  expect(err.reason).toBe('revoke-failed')
+  expect(err.message).toContain('The repository me/agent-store-backup was deleted, but revoking')
+  expect(gh.repos.has('me/agent-store-backup')).toBe(false)
+  expect((await engine.getBackupStatus()).connected).toBe(true)
+  expect(existsSync(deleteFile(aasHome))).toBe(true)
+
+  gh.revokeStatus = 202
+  const r = await engine.disconnectBackup({ level: 'delete', confirm: 'me/agent-store-backup' })
+  expect(r).toMatchObject({ repoDeleted: 'gone', revoked: true })
+  expect(existsSync(join(aasHome, 'backup'))).toBe(false)
+})
+
+test('a deletion sign-in without delete_repo, or as another account, is refused and its token revoked; cancel revokes an unused one', async () => {
+  const gh = await fresh()
+  const { aasHome, engine } = await connected(gh)
+  gh.deleteScope = 'repo'
+  expect((await approveDelete(engine).catch(e => e)).reason).toBe('github-signin-needed')
+  expect(gh.revoked.has(DEL_TOKEN)).toBe(true)
+  expect(existsSync(deleteFile(aasHome))).toBe(false)
+
+  gh.revoked.clear()
+  gh.deleteScope = 'repo,delete_repo'
+  gh.login = 'someone-else'
+  const other = await approveDelete(engine).catch(e => e)
+  expect(other.reason).toBe('github-signin-needed')
+  expect(other.message).toContain('sign in as me')
+  expect(gh.revoked.has(DEL_TOKEN)).toBe(true)
+  expect(existsSync(deleteFile(aasHome))).toBe(false)
+
+  gh.revoked.clear()
+  gh.login = 'me'
+  await approveDelete(engine)
+  expect(existsSync(deleteFile(aasHome))).toBe(true)
+  await engine.cancelGitHubBackupSignIn()
+  expect(existsSync(deleteFile(aasHome))).toBe(false)
+  expect([...gh.revoked]).toEqual([DEL_TOKEN])
+  // Cancelling the deletion sign-in leaves the connection and its token alone.
+  expect((await engine.getBackupStatus()).connected).toBe(true)
+  expect(gh.repos.has('me/agent-store-backup')).toBe(true)
+})
+
+test('a connection made by Git URL offers neither revoking nor deleting', async () => {
+  const gh = await fresh()
+  await gh.addRepo('plain')
+  const { aasHome, engine } = await device(gh)
+  await engine.connectBackup({ remote: gh.path('me/plain') })
+  expect((await engine.getBackupStatus()).github).toBeUndefined()
+  for (const level of ['revoke', 'delete'] as const) {
+    const err = await engine.disconnectBackup({ level, confirm: 'me/plain' }).catch(e => e)
+    expect(err.reason).toBe('not-github')
+  }
+  expect((await engine.startGitHubBackupDeleteSignIn().catch(e => e)).reason).toBe('not-github')
+  expect(gh.calls).toEqual([])
+  expect((await engine.getBackupStatus()).connected).toBe(true)
+  expect((await engine.disconnectBackup()).level).toBe('device')
+  expect(existsSync(join(aasHome, 'backup'))).toBe(false)
 })

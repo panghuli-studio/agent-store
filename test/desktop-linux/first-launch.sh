@@ -5,6 +5,9 @@ set -euo pipefail
 OUT=${OUT:-/out/first-launch}
 mkdir -p "$OUT"
 export DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+# Use the simple context for ASCII automation: the default zh XIM path leaves stale
+# native pixels on this Xvfb/WebKitGTK stack, even with IBus (#233, see shots.sh).
+export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >"$OUT/xvfb.log" 2>&1 &
 xvfb_pid=$!
 app_pid=''

@@ -20,13 +20,86 @@ on:
       - 'scripts/ci-catalog-api.sh'
       - '.github/workflows/desktop-shots.yml'
   workflow_dispatch:
+    inputs:
+      ocr_run_id:
+        description: Only verify result-title OCR against this run's disconnect-probe artifact (empty runs native checks)
+        type: string
+        default: ''
+      probe_only:
+        description: Run only the disconnect repaint measurements
+        type: boolean
+        default: false
 
 concurrency:
-  group: desktop-shots-${{ github.ref }}
+  group: desktop-shots-${{ github.ref }}-${{ inputs.ocr_run_id && 'ocr' || inputs.probe_only && 'probe' || 'screenshots' }}
   cancel-in-progress: true
 
 jobs:
+  ocr:
+    if: ${{ inputs.ocr_run_id }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the same OCR tools as the native container
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick tesseract-ocr tesseract-ocr-chi-sim
+      - uses: actions/download-artifact@v4
+        with:
+          name: disconnect-probe
+          path: out/probe
+          run-id: ${{ inputs.ocr_run_id }}
+          github-token: ${{ github.token }}
+      - name: Measure OCR preprocessing on the same native Chinese heading
+        shell: bash
+        run: |
+          set -euo pipefail
+          for recipe in lanczos catrom inverse threshold inverse-threshold grayscale; do
+            extra=()
+            case "$recipe" in
+              catrom) extra=(-filter Catrom) ;;
+              inverse) extra=(-negate) ;;
+              threshold) extra=(-colorspace Gray -threshold 60%) ;;
+              inverse-threshold) extra=(-negate -colorspace Gray -threshold 60%) ;;
+              grayscale) extra=(-colorspace Gray) ;;
+            esac
+            convert out/probe/plain-zh-im-simple-5-done-15s.png -crop 126x24+374+199 +repage "${extra[@]}" -resize 400% "out/$recipe.png"
+            for mode in 6 7 11 13; do
+              text=$(tesseract "out/$recipe.png" stdout -l chi_sim --psm "$mode" 2>/dev/null | tr -d '[:space:]')
+              echo "$recipe psm=$mode: $text"
+            done
+          done
+      - name: Real completion pixels pass; stale and blank pixels fail
+        shell: bash
+        run: |
+          set -euo pipefail
+          for lang in zh en; do
+            expected=Disconnected
+            variants=(plain-en wd-en)
+            if [ "$lang" = zh ]; then
+              expected=已断开
+              variants=(plain-zh-im-simple wd-zh-im-simple)
+            fi
+            for variant in "${variants[@]}"; do
+              for step in 5-done-15s 6-done-45s; do
+                text=$(bash test/desktop-linux/disconnect-title.sh "out/probe/$variant-$step.png" "$lang")
+                echo "$variant-$step: $text"
+                [[ "$text" == "$expected" ]]
+              done
+            done
+            for step in 3-code-5s 5-done-15s; do
+              text=$(bash test/desktop-linux/disconnect-title.sh "out/probe/plain-zh-$step.png" "$lang")
+              echo "stale-$lang-$step: $text"
+              [[ "$text" != *"$expected"* ]]
+            done
+            convert -size 1280x800 xc:black out/blank.png
+            text=$(bash test/desktop-linux/disconnect-title.sh out/blank.png "$lang")
+            [[ "$text" != *"$expected"* ]]
+          done
   shots:
+    if: ${{ !inputs.ocr_run_id }}
     runs-on: ubuntu-latest
     # A compiler upgrade invalidates build layers before the full native acceptance.
     timeout-minutes: 75
@@ -57,7 +130,7 @@ jobs:
       - name: Start the catalog API
         run: scripts/ci-catalog-api.sh as-api:ci 3001
       - name: First-launch restore (Chinese and English)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/first-launch
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -v "$PWD/out/first-launch:/out/first-launch" --entrypoint bash as-desktop-linux /work/test/desktop-linux/first-launch.sh
@@ -67,24 +140,37 @@ jobs:
           name: first-launch-restore
           path: out/first-launch/
           retention-days: 14
+      - name: Disconnect repaint probe
+        if: ${{ !cancelled() && inputs.probe_only }}
+        # Measurements, not checks (#233): see test/desktop-linux/disconnect-probe.sh.
+        run: |
+          mkdir -p out
+          docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/disconnect-probe.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.probe_only }}
+        with:
+          name: disconnect-probe
+          path: out/probe/
+          retention-days: 14
       - name: Screenshots of the native window
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/shots.sh
       - name: Marketing screenshots
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/marketing
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -e OUT=/out/marketing -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/marketing.sh
       - name: AppImage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/appimage
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -e OUT=/out/appimage -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/appimage.sh
       - name: Result
         if: always()
         run: |
-          cat out/result.txt out/marketing/result.txt out/appimage/result.txt || true
+          cat out/probe/env.txt out/probe/result.txt out/result.txt out/marketing/result.txt out/appimage/result.txt || true
           docker logs catalog-api > out/catalog-api.log 2>&1 || true
       - uses: actions/upload-artifact@v4
         if: always()

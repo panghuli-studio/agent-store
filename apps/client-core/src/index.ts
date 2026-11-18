@@ -22,7 +22,7 @@ export { ProjectConflictError, ProjectItemNotInstalledError } from './projects/s
 export { ProjectNotFoundError, ProjectPathError } from './projects/store'
 export { ProjectMcpUnsupportedError } from './projects/mcp-entries'
 export { runMigrate } from './migrate'
-export { BackupNotConnectedError, BackupAlreadyConnectedError, BackupRemoteRefusedError, BackupNotFoundError, BackupBusyError } from './backup/service'
+export { BackupNotConnectedError, BackupAlreadyConnectedError, BackupRemoteRefusedError, BackupNotFoundError, BackupBusyError, BackupDisconnectError } from './backup/service'
 export { BackupSecretError } from './backup/secrets'
 export { BackupExportError } from './backup/export'
 export { BackupApplyError } from './backup/apply'

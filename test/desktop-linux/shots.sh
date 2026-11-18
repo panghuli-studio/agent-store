@@ -49,6 +49,10 @@ links_to() { [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; }
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
 export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+# The harness types ASCII and needs no input method service. GTK selects XIM for zh,
+# ja, ko and th; on this Xvfb/WebKitGTK stack its zh path leaves stale native pixels
+# after input focus, even with IBus. The simple context passes (disconnect-probe.sh, #233).
+export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
 sleep 2
 eval "$(dbus-launch --sh-syntax)"
@@ -548,6 +552,79 @@ HOME=$HOME_C timeout 120 "$SIDECAR" backup connect --github --device cli-c </dev
 echo >>"$OUT/cli.txt"
 check "aas backup connect --github without a terminal connected to the backup found on the account" 'grep -q cli-c "$HOME_C/.agent-store/backup/connection.json" && grep -q "Found the backup an earlier device made" "$OUT/cli.txt"'
 check "the GitHub token is in no log, no CLI output and no sidecar command line" '! grep -qs "$GH_TOKEN" "$OUT"/app-*.log "$OUT/cli.txt" "$ARGV_LOG" "$OUT/fake-github.log"'
+revoked() { curl -s "http://127.0.0.1:$GH_PORT/control/revoked" | python3 -c 'import json,sys; print(json.load(sys.stdin)["revoked"].count(sys.argv[1]))' "$1"; }
+echo "\$ (cli-c) aas backup disconnect --revoke --yes" >>"$OUT/cli.txt"
+HOME=$HOME_C "$SIDECAR" backup disconnect --revoke --yes </dev/null >>"$OUT/cli.txt" 2>&1
+echo >>"$OUT/cli.txt"
+check "aas backup disconnect --revoke revoked the token, removed the local folder and kept the repository" '[ "$(revoked repo)" = 1 ] && [ ! -e "$HOME_C/.agent-store/backup" ] && grep -q "Revoked this device" "$OUT/cli.txt" && [ -d "$GH_REPO" ]'
+# 13b. Disconnecting a GitHub backup (#233), in Chinese and English: the three levels, each
+#      explained in the dialog before it runs, then deleting the remote repository (the name typed,
+#      a second device code for delete_repo) and the result. Before it, aas backup disconnect
+#      --revoke for the CLI device, which leaves the repository. The checks confirm the repository
+#      is gone only after the deletion sign-in, both of this device's tokens were revoked and the
+#      local backup folder was removed.
+# A disk assertion can pass even when the screenshot captured an older frame (or a blank
+# WebKit repaint). Observe the native pixels before accepting the code/result screenshots.
+disconnect_shot() {
+  local name=$1 expected=$2 deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    shot "$name"
+    tesseract "$OUT/$name.png" stdout -l eng+chi_sim 2>/dev/null | tr -d '[:space:]' >"$OUT/$name.txt"
+    local text="$OUT/$name.txt"
+    if [ -n "${3:-}" ]; then
+      text="$OUT/$name-title.txt"
+      bash /work/test/desktop-linux/disconnect-title.sh "$OUT/$name.png" "$3" >"$text"
+    fi
+    if grep -Eq "$expected" "$text"; then return 0; fi
+    sleep 1
+  done
+  log "FAIL: $name never displayed $expected"
+  failed=1
+  return 1
+}
+for lang in zh en; do
+  if [ "$lang" = zh ]; then LOC=(zh_CN.UTF-8 zh_CN:zh); else LOC=(en_US.UTF-8 en_US:en); fi
+  gh_mode auto
+  cli backup connect --github --device desk-a
+  cli backup now
+  REVOKED_BEFORE=$(revoked repo),$(revoked repo,delete_repo)
+  GH_DISC_REPO=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["github"]["repo"])' "$CONN")
+  check "$lang: the GitHub connection records its repository" '[ -n "$GH_DISC_REPO" ] && [ -d "$GH_ROOT/$GH_DISC_REPO.git" ]'
+  gh_mode wait
+  launch_in "${LOC[@]}" "$lang"
+  # 断开…: panel, 拉取, 立即备份, the switch, 断开…; the dialog focuses 取消. Back one is the level.
+  backup_page 8
+  xdotool key Tab Tab Tab Tab Tab Return
+  sleep 2
+  shot "33h-$lang-backup-disconnect-device"
+  xdotool key shift+Tab Down
+  sleep 1
+  shot "33i-$lang-backup-disconnect-revoke"
+  xdotool key Down
+  sleep 1
+  xdotool key Tab
+  xdotool type --delay 40 "$GH_DISC_REPO"
+  # Copy the input selection back: a Tab sent before the radio's render completed must
+  # not silently turn this into a picture of an empty, disabled confirmation field.
+  xdotool key ctrl+a ctrl+c
+  TYPED_REPO=$(timeout 2 xclip -selection clipboard -o 2>/dev/null || true)
+  check "$lang: the focused confirmation input contains the repository name" '[ "$TYPED_REPO" = "$GH_DISC_REPO" ]'
+  disconnect_shot "33j-$lang-backup-disconnect-delete" 'me/agent-store-backup'
+  check "$lang: nothing is deleted before the deletion sign-in" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
+  # The typed name, then 取消, then 登录 GitHub 并删除.
+  xdotool key Tab Tab Return
+  disconnect_shot "33k-$lang-backup-disconnect-code" 'HQLC.RT4P'
+  check "$lang: still nothing deleted while the deletion sign-in waits" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
+  gh_mode approve
+  if [ "$lang" = zh ]; then DONE_TEXT='已断开'; else DONE_TEXT='Disconnected'; fi
+  disconnect_shot "33l-$lang-backup-disconnect-deleted" "$DONE_TEXT" "$lang"
+  xdotool key Escape
+  sleep 2
+  stop_app
+  check "$lang: the repository was deleted on GitHub and this device's backup folder removed" '[ ! -e "$GH_ROOT/$GH_DISC_REPO.git" ] && [ ! -e "$HOME/.agent-store/backup" ]'
+  check "$lang: the connection's token and the deletion token were both revoked" '[ "$(revoked repo),$(revoked repo,delete_repo)" = "$((${REVOKED_BEFORE%,*} + 1)),$((${REVOKED_BEFORE#*,} + 1))" ]'
+done
+check "the GitHub tokens are in no log, no CLI output and no sidecar command line after disconnecting" '! grep -qs "$GH_TOKEN" "$OUT"/app-*.log "$OUT/cli.txt" "$ARGV_LOG" "$OUT/fake-github.log"'
 kill "$GH_PID" 2>/dev/null
 unset AS_GITHUB_CLIENT_ID AS_GITHUB_URL AS_GITHUB_API_URL
 

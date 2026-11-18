@@ -53,6 +53,7 @@ export type {
   BackupMissingSecret, BackupFailure, BackupLocalOnly, BackupExcludedFile, BackupStatus, BackupConnectResult,
   BackupChangeAction, BackupAppliedChange, BackupSyncResult, BackupResolveResult, BackupSnapshot, BackupRestoreResult,
   BackupHistoryEntry, GitHubDeviceCode, GitHubBackupRepo, GitHubSignInPoll, GitHubConnectOptions,
+  BackupDisconnectLevel, BackupDisconnectOptions, BackupDisconnectResult, GitHubDeleteSignInPoll,
 } from './backup'
 export type { Plan, SubscriptionStatus, SubscriptionPeriod, MySubscription, Entitlements } from './entitlement'
 export { PRICING, formatPrice } from './pricing'

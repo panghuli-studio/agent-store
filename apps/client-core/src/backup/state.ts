@@ -11,8 +11,15 @@ export interface Connection {
   branch: string
   device: string
   connectedAt: string
-  /** Set when the connection was made by signing in with GitHub. */
-  github?: { login: string }
+  /** Set when the connection was made by signing in with GitHub; `repo` (`owner/name`) since #233. */
+  github?: { login: string; repo?: string }
+}
+
+/** An approved sign-in with `delete_repo`, waiting for disconnectBackup({ level: 'delete' }); 0600. */
+export interface GitHubDeleteSignIn {
+  token: string
+  login: string
+  approvedAt: string
 }
 
 /** An approved GitHub sign-in waiting for connectGitHubBackup; 0600, removed once connected or cancelled. */
@@ -44,6 +51,7 @@ export const gitDirOf = (aasHome: string) => join(backupDir(aasHome), 'repo.git'
 const connectionPath = (aasHome: string) => join(backupDir(aasHome), 'connection.json')
 const credentialsPath = (aasHome: string) => join(backupDir(aasHome), 'credentials.json')
 const signInPath = (aasHome: string) => join(backupDir(aasHome), 'github-signin.json')
+const deleteSignInPath = (aasHome: string) => join(backupDir(aasHome), 'github-delete.json')
 const statePath = (aasHome: string) => join(backupDir(aasHome), 'state.json')
 export const lockTarget = (aasHome: string) => join(aasHome, 'backup')
 export const lockPath = (aasHome: string) => join(aasHome, 'backup.lock')
@@ -90,6 +98,16 @@ export async function writeGitHubSignIn(aasHome: string, s: GitHubSignIn): Promi
 
 export async function deleteGitHubSignIn(aasHome: string): Promise<void> {
   await rm(signInPath(aasHome), { force: true })
+}
+
+export const readGitHubDeleteSignIn = (aasHome: string) => readJson<GitHubDeleteSignIn>(deleteSignInPath(aasHome))
+
+export async function writeGitHubDeleteSignIn(aasHome: string, s: GitHubDeleteSignIn): Promise<void> {
+  await atomicWriteSecretFile(deleteSignInPath(aasHome), JSON.stringify(s))
+}
+
+export async function deleteGitHubDeleteSignIn(aasHome: string): Promise<void> {
+  await rm(deleteSignInPath(aasHome), { force: true })
 }
 
 export async function writeState(aasHome: string, s: SyncState): Promise<void> {
