@@ -239,7 +239,7 @@ test('a name taken by something else is skipped; an empty private one is reused 
   expect(approved).toMatchObject({ status: 'approved', existing: null, create: 'me/agent-store-backup-3' })
   const r = await engine.connectGitHubBackup({ repo: 'new' })
   expect(r.status.remote).toBe(`${web}/me/agent-store-backup-3.git`)
-  expect(gh.calls.some(c => c.method === 'POST')).toBe(false)
+  expect(gh.calls.some(c => c.url.endsWith('/user/repos'))).toBe(false)
 })
 
 test('denied and expired sign-ins leave nothing behind; a cancelled one forgets the token', async () => {

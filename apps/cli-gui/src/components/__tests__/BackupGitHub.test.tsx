@@ -12,6 +12,7 @@ const { TerminalLogProvider, useTerminalLog } = await import('../../state/Termin
 const { BackupTab } = await import('../backup/BackupTab')
 const { BackupDialogs } = await import('../backup/BackupDialogs')
 const { settleRpc } = await import('../../test/settle')
+const { I18nProvider } = await import('../../i18n')
 
 let locale = 'zh'
 beforeEach(() => {
@@ -70,15 +71,17 @@ function Log() {
 
 async function openConnect(button: RegExp | string = '连接仓库…') {
   render(
-    <AppStateProvider>
-      <TerminalLogProvider>
-        <BackupProvider timing={NEVER}>
-          <BackupTab />
-          <BackupDialogs />
-          <Log />
-        </BackupProvider>
-      </TerminalLogProvider>
-    </AppStateProvider>
+    <I18nProvider>
+      <AppStateProvider>
+        <TerminalLogProvider>
+          <BackupProvider timing={NEVER}>
+            <BackupTab />
+            <BackupDialogs />
+            <Log />
+          </BackupProvider>
+        </TerminalLogProvider>
+      </AppStateProvider>
+    </I18nProvider>
   )
   fireEvent.click(await screen.findByRole('button', { name: button }))
   return screen.findByRole('dialog')
