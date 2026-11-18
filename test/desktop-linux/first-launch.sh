@@ -49,6 +49,11 @@ for lang in zh en; do
   # The default focus is Start fresh; restore is the next button.
   xdotool key Tab Return
   sleep 8
+  shot "$lang-connect-github"
+  # The connect dialog opens on GitHub sign-in with focus on its button; Shift+Tab
+  # passes Cancel and the device name to reach the Git URL method.
+  xdotool key shift+Tab shift+Tab shift+Tab Return
+  sleep 3
   shot "$lang-connect"
   xdotool type --clearmodifiers "$REMOTE"
   xdotool key Return
