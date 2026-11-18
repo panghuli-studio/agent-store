@@ -7,7 +7,7 @@ import lockfile from 'proper-lockfile'
 import type {
   BackupAppliedChange, BackupConflict, BackupConflictChoice, BackupConnectOptions, BackupConnectResult,
   BackupFailure, BackupHistoryEntry, BackupItemRef, BackupMissingSecret, BackupResolveResult, BackupRestoreResult,
-  BackupSnapshot, BackupStatus, BackupSyncResult, Engine, Paths,
+  BackupSnapshot, BackupStatus, BackupSyncResult, Engine, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll, Paths,
 } from '@as/types'
 import type { Catalog } from '../catalog'
 import { assertSafeSlug } from '../paths'
@@ -15,18 +15,21 @@ import { findEntry, readRegistry } from '../registry/index'
 import { applyItem, installCopy, type ApplyContext, type ApplyOutcome } from './apply'
 import { DEFAULT_MAX_ITEM_BYTES, exportLocal, type ExportResult, type WantedTarget } from './export'
 import { splitRemoteCredentials, type GitCredentials } from './git'
+import { BackupGitHubError, GitHubClient, type GitHubOptions } from './github'
 import { copyEntries, FORMAT, FORMAT_FILE, itemPath, listTree, parseKey, stableJson } from './layout'
 import { decide, type Decision } from './merge'
 import { BackupRepo, type Author, type ItemIds } from './repo'
 import { BackupSecretError, scanTree, type SecretFinding } from './secrets'
 import {
-  backupDir, gitDirOf, lockPath, lockTarget, readConnection, readCredentials, readState, writeConnection,
-  writeCredentials, writeState, type BlockedTarget, type Connection, type SyncState,
+  backupDir, deleteGitHubSignIn, gitDirOf, lockPath, lockTarget, readConnection, readCredentials, readGitHubSignIn, readState,
+  writeConnection, writeCredentials, writeGitHubSignIn, writeState, type BlockedTarget, type Connection, type SyncState,
 } from './state'
 
 const SNAPSHOT_PREFIX = 'refs/agent-store/snapshots/'
 const KEEP_SNAPSHOTS = 30
 const PUSH_ATTEMPTS = 3
+/** An approved GitHub sign-in that was not connected within this time is dropped. */
+const SIGN_IN_TTL_MS = 30 * 60_000
 
 export class BackupNotConnectedError extends Error {
   readonly reason = 'not-connected'
@@ -71,6 +74,7 @@ export interface BackupServiceOptions {
   /** An engine that installs from `catalog` (the backup) instead of the store. */
   engineFor: (catalog: Catalog) => Engine
   maxItemBytes?: number
+  github?: GitHubOptions
 }
 
 const ref = (key: string): BackupItemRef => ({ key, ...parseKey(key) })
@@ -144,9 +148,11 @@ interface Session {
 
 export class BackupService {
   private readonly maxItemBytes: number
+  private readonly github: GitHubClient
 
   constructor(private readonly paths: Required<Paths>, private readonly options: BackupServiceOptions) {
     this.maxItemBytes = options.maxItemBytes ?? DEFAULT_MAX_ITEM_BYTES
+    this.github = new GitHubClient(options.github)
   }
 
   private get aasHome(): string {
@@ -419,8 +425,7 @@ export class BackupService {
 
   async connect(options: BackupConnectOptions): Promise<BackupConnectResult> {
     return this.locked(async () => {
-      const existing = await readConnection(this.aasHome)
-      if (existing) throw new BackupAlreadyConnectedError(existing.remote)
+      await this.assertNotConnected()
       const split = splitRemoteCredentials(options.remote.trim())
       if (options.token && !/^https?:\/\//i.test(split.remote)) {
         throw new BackupRemoteRefusedError('A token is only used for HTTPS remotes; SSH remotes use your SSH keys', 'token-needs-https')
@@ -428,27 +433,94 @@ export class BackupService {
       const credentials: GitCredentials | undefined = options.token
         ? { username: options.username || split.credentials?.username || 'x-access-token', password: options.token }
         : split.credentials
-      const defaultBranch = await BackupRepo.remoteDefaultBranch(split.remote, credentials)
-      const branch = options.branch?.trim() || defaultBranch || 'main'
-      const device = options.device?.trim() || hostname() || 'device'
+      return this.attach(split.remote, credentials, options)
+    })
+  }
+
+  private async assertNotConnected(): Promise<void> {
+    const existing = await readConnection(this.aasHome)
+    if (existing) throw new BackupAlreadyConnectedError(existing.remote)
+  }
+
+  /** Starts over in ~/.agent-store/backup/ and connects it to `remote`; on failure nothing is left there. */
+  private async attach(
+    remote: string, credentials: GitCredentials | undefined, options: { branch?: string; device?: string; github?: { login: string } },
+  ): Promise<BackupConnectResult> {
+    const defaultBranch = await BackupRepo.remoteDefaultBranch(remote, credentials)
+    const branch = options.branch?.trim() || defaultBranch || 'main'
+    const device = options.device?.trim() || hostname() || 'device'
+    await rm(backupDir(this.aasHome), { recursive: true, force: true })
+    await mkdir(backupDir(this.aasHome), { recursive: true, mode: 0o700 })
+    try {
+      if (credentials) await writeCredentials(this.aasHome, credentials)
+      const repo = await BackupRepo.init(gitDirOf(this.aasHome), remote, branch, credentials)
+      const head = await repo.fetch(branch)
+      let remoteItems = 0
+      if (head) {
+        await checkFormat(repo, head, { remote, branch })
+        remoteItems = (await repo.items(head)).size
+      }
+      await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
+      await writeConnection(this.aasHome, {
+        remote, branch, device, connectedAt: new Date().toISOString(), ...(options.github ? { github: options.github } : {}),
+      })
+      return { status: await this.statusOf({ fetch: false }), remoteItems }
+    } catch (e) {
       await rm(backupDir(this.aasHome), { recursive: true, force: true })
-      await mkdir(backupDir(this.aasHome), { recursive: true, mode: 0o700 })
+      throw e
+    }
+  }
+
+  async startGitHubSignIn(): Promise<GitHubDeviceCode> {
+    await this.locked(async () => {
+      await this.assertNotConnected()
+      await deleteGitHubSignIn(this.aasHome)
+    })
+    return this.github.startDeviceFlow()
+  }
+
+  async pollGitHubSignIn(deviceCode: string): Promise<GitHubSignInPoll> {
+    const poll = await this.github.pollToken(deviceCode)
+    if (poll.status !== 'approved') return poll
+    const login = await this.github.login(poll.token)
+    const survey = await this.github.survey(poll.token, login)
+    await this.locked(async () => {
+      await this.assertNotConnected()
+      await writeGitHubSignIn(this.aasHome, { token: poll.token, login, existing: survey.existing?.fullName ?? null, approvedAt: new Date().toISOString() })
+    })
+    return { status: 'approved', login, existing: survey.existing, create: `${login}/${survey.create.name}` }
+  }
+
+  async connectGitHub(options: GitHubConnectOptions): Promise<BackupConnectResult> {
+    return this.locked(async () => {
+      await this.assertNotConnected()
+      const signIn = await readGitHubSignIn(this.aasHome)
+      if (!signIn || Date.now() - Date.parse(signIn.approvedAt) > SIGN_IN_TTL_MS || !(Date.parse(signIn.approvedAt) > 0)) {
+        await deleteGitHubSignIn(this.aasHome)
+        throw new BackupGitHubError('There is no GitHub sign-in waiting to be connected, or it is too old; sign in with GitHub again', 'github-signin-needed')
+      }
+      let fullName: string
+      if (options.repo === 'existing') {
+        if (!signIn.existing) throw new BackupGitHubError('No earlier backup was found on this GitHub account; create a new one instead', 'github-failed')
+        fullName = signIn.existing
+      } else {
+        const survey = await this.github.survey(signIn.token, signIn.login)
+        fullName = survey.create.exists ? `${signIn.login}/${survey.create.name}` : (await this.github.createPrivate(signIn.token, survey.create.name)).fullName
+      }
+      const credentials: GitCredentials = { username: signIn.login, password: signIn.token }
       try {
-        if (credentials) await writeCredentials(this.aasHome, credentials)
-        const repo = await BackupRepo.init(gitDirOf(this.aasHome), split.remote, branch, credentials)
-        const head = await repo.fetch(branch)
-        let remoteItems = 0
-        if (head) {
-          await checkFormat(repo, head, { remote: split.remote, branch })
-          remoteItems = (await repo.items(head)).size
-        }
-        await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
-        await writeConnection(this.aasHome, { remote: split.remote, branch, device, connectedAt: new Date().toISOString() })
-        return { status: await this.statusOf({ fetch: false }), remoteItems }
+        return await this.attach(this.github.remoteOf(fullName), credentials, { device: options.device, github: { login: signIn.login } })
       } catch (e) {
-        await rm(backupDir(this.aasHome), { recursive: true, force: true })
+        // The sign-in stays usable for another try without approving again.
+        await writeGitHubSignIn(this.aasHome, signIn)
         throw e
       }
+    })
+  }
+
+  async cancelGitHubSignIn(): Promise<void> {
+    await this.locked(async () => {
+      if (!(await readConnection(this.aasHome))) await deleteGitHubSignIn(this.aasHome)
     })
   }
 
@@ -468,6 +540,7 @@ export class BackupService {
       device: conn.device,
       connectedAt: conn.connectedAt,
       hasCredentials: !!s.credentials,
+      ...(conn.github ? { github: conn.github } : {}),
       ...(s.state.lastSync ? { lastSync: s.state.lastSync } : {}),
       conflicts: s.state.conflicts,
       missingSecrets: missingSecrets(s.state.blocked),

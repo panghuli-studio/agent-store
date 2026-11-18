@@ -77,6 +77,9 @@ const REASON_KEYS: Record<string, string> = {
   'host-key': 'hostKey',
   'not-found': 'notFound',
   network: 'network',
+  'github-not-configured': 'githubNotConfigured',
+  'github-signin-needed': 'githubSignin',
+  'github-failed': 'github',
 }
 
 /** What went wrong and what to do next; the engine's own text stays behind 详细信息. */

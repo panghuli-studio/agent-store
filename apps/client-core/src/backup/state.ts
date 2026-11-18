@@ -1,6 +1,6 @@
 // ~/.agent-store/backup/: the bare repository and what this device remembers about it.
 // None of it is uploaded; credentials.json holds the token and is 0600.
-import { mkdir, readFile } from 'fs/promises'
+import { mkdir, readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import type { BackupConflict, BackupFailure, BackupItemRef, ToolTarget } from '@as/types'
 import { atomicWriteFile, atomicWriteSecretFile } from '../config/safe-file'
@@ -11,6 +11,17 @@ export interface Connection {
   branch: string
   device: string
   connectedAt: string
+  /** Set when the connection was made by signing in with GitHub. */
+  github?: { login: string }
+}
+
+/** An approved GitHub sign-in waiting for connectGitHubBackup; 0600, removed once connected or cancelled. */
+export interface GitHubSignIn {
+  token: string
+  login: string
+  /** The backup offered for connecting, `owner/name`. */
+  existing: string | null
+  approvedAt: string
 }
 
 /** A target the backup wants enabled that could not be enabled here. */
@@ -32,6 +43,7 @@ export const backupDir = (aasHome: string) => join(aasHome, 'backup')
 export const gitDirOf = (aasHome: string) => join(backupDir(aasHome), 'repo.git')
 const connectionPath = (aasHome: string) => join(backupDir(aasHome), 'connection.json')
 const credentialsPath = (aasHome: string) => join(backupDir(aasHome), 'credentials.json')
+const signInPath = (aasHome: string) => join(backupDir(aasHome), 'github-signin.json')
 const statePath = (aasHome: string) => join(backupDir(aasHome), 'state.json')
 export const lockTarget = (aasHome: string) => join(aasHome, 'backup')
 export const lockPath = (aasHome: string) => join(aasHome, 'backup.lock')
@@ -67,6 +79,17 @@ export async function writeConnection(aasHome: string, c: Connection): Promise<v
 export async function writeCredentials(aasHome: string, c: GitCredentials): Promise<void> {
   await mkdir(backupDir(aasHome), { recursive: true, mode: 0o700 })
   await atomicWriteSecretFile(credentialsPath(aasHome), JSON.stringify(c))
+}
+
+export const readGitHubSignIn = (aasHome: string) => readJson<GitHubSignIn>(signInPath(aasHome))
+
+export async function writeGitHubSignIn(aasHome: string, s: GitHubSignIn): Promise<void> {
+  await mkdir(backupDir(aasHome), { recursive: true, mode: 0o700 })
+  await atomicWriteSecretFile(signInPath(aasHome), JSON.stringify(s))
+}
+
+export async function deleteGitHubSignIn(aasHome: string): Promise<void> {
+  await rm(signInPath(aasHome), { force: true })
 }
 
 export async function writeState(aasHome: string, s: SyncState): Promise<void> {

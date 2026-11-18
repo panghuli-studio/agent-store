@@ -66,6 +66,8 @@ export interface BackupStatus {
   device?: string
   connectedAt?: string
   hasCredentials?: boolean
+  /** Set when the connection was made by signing in with GitHub. */
+  github?: { login: string }
   lastSync?: { commit: string; at: string }
   /** Items that differ from the last sync and would be uploaded by `backupNow`. */
   localChanges: BackupItemRef[]
@@ -140,4 +142,49 @@ export interface BackupHistoryEntry {
   device: string
   at: string
   subject: string
+}
+
+/** The code to show the user, from GitHub's device flow (docs/backup-sync.md, "Connecting with GitHub"). */
+export interface GitHubDeviceCode {
+  /** Passed back to pollGitHubBackupSignIn; it is not the token. */
+  deviceCode: string
+  /** What the user types at `verificationUri`, e.g. `WDJB-MJHT`. */
+  userCode: string
+  /** https://github.com/login/device */
+  verificationUri: string
+  /** Seconds until the code expires. */
+  expiresIn: number
+  /** Seconds to wait between polls. */
+  interval: number
+}
+
+/** A repository on the signed-in account; `fullName` is `<owner>/<name>`. */
+export interface GitHubBackupRepo {
+  fullName: string
+  private: boolean
+  url: string
+}
+
+/**
+ * One poll. On `approved` the token stays in the core (backup/github-signin.json, 0600) until
+ * connectGitHubBackup or cancelGitHubBackupSignIn; it is never returned.
+ */
+export type GitHubSignInPoll =
+  | { status: 'pending' }
+  | { status: 'slow_down'; interval: number }
+  | { status: 'denied' }
+  | { status: 'expired' }
+  | {
+      status: 'approved'
+      login: string
+      /** A backup an earlier device made on this account, offered for connecting. */
+      existing: GitHubBackupRepo | null
+      /** The private repository `connectGitHubBackup({ repo: 'new' })` creates (or reuses when it is empty). */
+      create: string
+    }
+
+export interface GitHubConnectOptions {
+  /** `existing`: the backup offered by the approved poll; `new`: create the private repository. */
+  repo: 'existing' | 'new'
+  device?: string
 }

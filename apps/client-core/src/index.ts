@@ -27,6 +27,7 @@ export { BackupSecretError } from './backup/secrets'
 export { BackupExportError } from './backup/export'
 export { BackupApplyError } from './backup/apply'
 export { GitError, GitNotFoundError, classifyGitFailure } from './backup/git'
+export { BackupGitHubError, GITHUB_SCOPE } from './backup/github'
 export type { MigrateResult, MigrateStep } from './migrate'
 export type { DoctorFinding, DoctorPaths, DoctorOptions } from './doctor'
 export type {

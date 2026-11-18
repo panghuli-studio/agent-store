@@ -10,7 +10,8 @@ import type {
 } from './projects'
 import type {
   BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupHistoryEntry, BackupResolveResult,
-  BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult,
+  BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions, GitHubDeviceCode,
+  GitHubSignInPoll,
 } from './backup'
 import type {
   AgentDetection, ImportApplyResult, ImportRecordSummary, ImportScan, ImportScanOptions, ImportUndoOptions, ImportUndoResult,
@@ -491,6 +492,14 @@ export interface Engine {
   getBackupStatus(options?: { fetch?: boolean }): Promise<BackupStatus>
   /** Connects this device to a Git remote that is empty or holds an Agent Store backup; nothing is synced yet. */
   connectBackup(options: BackupConnectOptions): Promise<BackupConnectResult>
+  /** Starts GitHub's device flow for a backup on the user's GitHub account (scope `repo`). */
+  startGitHubBackupSignIn(): Promise<GitHubDeviceCode>
+  /** One poll of the device flow; on approval, finds an earlier backup on the account to offer. */
+  pollGitHubBackupSignIn(deviceCode: string): Promise<GitHubSignInPoll>
+  /** Connects to the offered backup, or creates the private repository and connects to it. */
+  connectGitHubBackup(options: GitHubConnectOptions): Promise<BackupConnectResult>
+  /** Forgets an approved sign-in that was not connected. */
+  cancelGitHubBackupSignIn(): Promise<void>
   /** Snapshot, then merge both ways per item, push, and apply what came from the remote. */
   backupNow(): Promise<BackupSyncResult>
   /** Applies remote changes here without uploading local ones. */

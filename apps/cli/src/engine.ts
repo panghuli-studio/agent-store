@@ -6,6 +6,12 @@ import { realRelayOps } from './relay-ops'
 // sidecar without AS_STORE_URL. Local dev and tests set AS_STORE_URL themselves.
 const DEFAULT_STORE_URL = 'https://agent-store-test.panghuli.tech'
 
+// Client id of the OAuth app (device flow enabled) that backups sign in to GitHub with. It is not a
+// secret; the device flow uses no client secret. Empty until the owner registers the app (#231):
+// until then `aas backup connect --github` and the client's GitHub option say it is not set up.
+// AS_GITHUB_CLIENT_ID overrides it, AS_GITHUB_URL and AS_GITHUB_API_URL point at another GitHub.
+const DEFAULT_GITHUB_CLIENT_ID = ''
+
 export function createEngine(): EngineImpl {
   const storeUrl = process.env['AS_STORE_URL'] ?? DEFAULT_STORE_URL
   // Deployed, the store and the API share one origin. Locally AS_STORE_URL is the API alone, and
@@ -14,6 +20,11 @@ export function createEngine(): EngineImpl {
   // The desktop client enables providers through this CLI too, so enabling one starts the relay it points at.
   return new EngineImpl(undefined, storeUrl, {
     authUrl,
+    github: {
+      clientId: process.env['AS_GITHUB_CLIENT_ID'] || DEFAULT_GITHUB_CLIENT_ID,
+      webUrl: process.env['AS_GITHUB_URL'] || undefined,
+      apiUrl: process.env['AS_GITHUB_API_URL'] || undefined,
+    },
     startRelay: async () => { await ensureRelayRunning(realRelayOps()) },
     stopRelay: async () => { await stopRelay(realRelayOps()) },
   })

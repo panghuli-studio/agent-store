@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
   BackupConflict, BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupResolveResult, BackupRestoreResult,
-  BackupSnapshot, BackupStatus, BackupSyncResult,
+  BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions,
 } from '@as/types'
 import { callRpc, watchRpc } from '../lib/rpc'
 import { AUTO_TIMING, BACKED_UP_METHODS, autoDue, isBusyError, type AutoTiming } from '../lib/backup'
@@ -43,6 +43,8 @@ interface BackupValue {
   version: number
   refresh: () => Promise<void>
   connect: (options: BackupConnectOptions) => Promise<BackupConnectResult>
+  /** After an approved GitHub sign-in (startGitHubBackupSignIn / pollGitHubBackupSignIn through `read`). */
+  connectGitHub: (options: GitHubConnectOptions) => Promise<BackupConnectResult>
   sync: (mode: 'now' | 'pull') => Promise<BackupSyncResult>
   resolve: (item: string, choice: BackupConflictChoice) => Promise<BackupResolveResult>
   restore: (id: string) => Promise<BackupRestoreResult>
@@ -176,6 +178,10 @@ export function BackupProvider({ children, timing = AUTO_TIMING }: { children: R
     (options: BackupConnectOptions) => manual('connect', () => callRpc<BackupConnectResult>('connectBackup', [options])),
     [manual]
   )
+  const connectGitHub = useCallback(
+    (options: GitHubConnectOptions) => manual('connect', () => callRpc<BackupConnectResult>('connectGitHubBackup', [options])),
+    [manual]
+  )
   const sync = useCallback(
     (mode: 'now' | 'pull') =>
       manual(mode, () => callRpc<BackupSyncResult>(mode === 'now' ? 'backupNow' : 'pullBackup'), (r) => {
@@ -265,7 +271,7 @@ export function BackupProvider({ children, timing = AUTO_TIMING }: { children: R
     <BackupContext.Provider
       value={{
         status, loadError, busy, autoRunning, autoEnabled, setAutoEnabled, autoError, lastRun, opError, read, version,
-        refresh, connect, sync, resolve, restore, disconnect, dialog, openDialog,
+        refresh, connect, connectGitHub, sync, resolve, restore, disconnect, dialog, openDialog,
       }}
     >
       {children}

@@ -9,6 +9,66 @@ Code: `apps/client-core/src/backup/` (the CLI and the desktop client both call i
 
 ## Connecting
 
+There are two ways to connect: sign in with GitHub, which creates the repository, or give the URL of any Git
+repository.
+
+### Connecting with GitHub
+
+```
+aas backup connect --github [--device <name>] [--new]
+```
+
+In the desktop client this is the **GitHub** option of the connect dialog, the default.
+
+1. **Code:** Agent Store starts GitHub's [device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)
+   and shows a code and the address to enter it at, `https://github.com/login/device`. The client opens that page.
+2. **Approval:** the user enters the code and authorizes Agent Store on GitHub. Agent Store polls at the interval GitHub
+   gives, slower when GitHub asks it to.
+3. **Repository:** Agent Store reads the signed-in account and looks at `agent-store-backup`, then `agent-store-backup-2`,
+   `-3`… on it, up to the first free name or ten names:
+   - **An earlier backup** (a repository holding `agent-store-backup.json`) is offered. The user connects to it, or creates
+     a new one instead (`--new` on the CLI; without a terminal to ask, the CLI connects to the backup). A public one is
+     flagged as public.
+   - **A new backup** goes to the first name that is free, created as a private repository with no initial commit. An
+     empty private repository under one of these names, left by an attempt that did not finish, is used instead of
+     creating another.
+   - A name holding anything else is skipped.
+4. **Connection:** the repository is connected as `https://github.com/<owner>/<name>.git` exactly as a Git URL with a
+   token would be; everything below applies to it. `status` shows the GitHub account.
+
+**Scope.** The only scope requested is `repo`. An OAuth app has no narrower scope that can create a private repository
+and push to it: `public_repo` cannot reach private repositories. A sign-in approved without `repo` is refused.
+
+**How a sign-in ends.** Each end leaves nothing connected and can be retried with a new code:
+
+| End | What happens |
+| --- | --- |
+| Denied | The user declined on GitHub. Nothing is stored. |
+| Expired | The code ran out (GitHub gives about 15 minutes) before it was approved. Nothing is stored. |
+| Cancelled | The user cancelled, or closed the dialog. An approved token not connected yet is deleted. |
+| Failed | GitHub or the network failed, or the repository could not be created. The error says which; see the `reason` table below. |
+
+**The token.**
+
+- **Before connecting:** from approval until the repository is connected, it is kept in
+  `~/.agent-store/backup/github-signin.json` (mode 0600). It is deleted once connected, on cancel and by the next sign-in;
+  older than 30 minutes, it is refused and deleted. When the connection fails, it stays there for another try without approving
+  again; the desktop client deletes it and starts a new sign-in instead.
+- **Once connected:** it moves to `credentials.json`, the same file and handling as any HTTPS token. It is checked for in
+  every export like the other backup tokens.
+- **Never:** in an RPC result or the desktop client's window, in argv, in a log line, in an error message or in the
+  repository.
+- **Revoking:** `disconnect` deletes it from this machine but does not revoke it. Revoke it on GitHub under Settings ›
+  Applications › Authorized OAuth Apps.
+
+**The OAuth app.** The device flow needs the client id of an OAuth app with *Enable Device Flow* checked. It needs no
+callback URL and no client secret, so no secret is in the code or the build. The id is the `DEFAULT_GITHUB_CLIENT_ID`
+constant in `apps/cli/src/engine.ts`. `AS_GITHUB_CLIENT_ID` overrides it, and `AS_GITHUB_URL` and `AS_GITHUB_API_URL`
+point at another GitHub. While it is empty, the GitHub path stops at once with `github-not-configured` and the Git-URL
+path is unaffected.
+
+### Connecting with a Git URL
+
 ```
 aas backup connect <git-url> [--branch <b>] [--device <name>] [--username <u>] [--token-stdin]
 ```
@@ -28,8 +88,6 @@ aas backup connect <git-url> [--branch <b>] [--device <name>] [--username <u>] [
 - **No sync yet:** connecting copies nothing in either direction.
   - On a new machine, `aas backup pull` installs what the backup holds.
   - `aas backup now` merges both ways.
-
-GitHub sign-in that creates the repository is not available; create a private repository and connect to its URL.
 
 ## What is in the backup
 
@@ -200,14 +258,15 @@ no secrets and is never pushed. The last 30 are kept.
 repository, its snapshots and the stored token. The remote repository is left as it is, and connecting again finds the
 backup.
 
-Revoking a sign-in and deleting the remote are not done by Agent Store.
+Revoking a GitHub sign-in and deleting the remote are not done by Agent Store.
 
 ## Local files
 
 ```
 ~/.agent-store/backup/repo.git           bare repository (fetched backup, snapshots)
 ~/.agent-store/backup/connection.json    remote, branch, device
-~/.agent-store/backup/credentials.json   HTTPS token, 0600
+~/.agent-store/backup/credentials.json   HTTPS token (also the GitHub token once connected), 0600
+~/.agent-store/backup/github-signin.json GitHub token between approval and connecting, 0600
 ~/.agent-store/backup/state.json         last synced commit, pending conflicts, missing keys, failures
 ~/.agent-store/backup.lock               one backup operation at a time, across the CLI and the desktop client
 ```
@@ -218,6 +277,7 @@ The `Engine` methods are:
 
 - `getBackupStatus`;
 - `connectBackup`;
+- `startGitHubBackupSignIn`, `pollGitHubBackupSignIn`, `connectGitHubBackup`, `cancelGitHubBackupSignIn`;
 - `backupNow`, `pullBackup`;
 - `resolveBackupConflict`;
 - `listBackupSnapshots`, `restoreBackupSnapshot`;
@@ -245,14 +305,17 @@ reaches argv. Errors carry `code` (class name) and `reason`:
 | `auth-failed` | git: the remote refused the credentials or SSH key (`GitError`) |
 | `host-key` | git: the SSH host key is not trusted yet (`GitError`) |
 | `not-found` | git: no such repository, or no access to it (`GitError`) |
-| `network` | git: the remote could not be reached (`GitError`) |
+| `network` | git: the remote could not be reached (`GitError`); or GitHub could not be reached (`BackupGitHubError`) |
+| `github-not-configured` | this build has no GitHub OAuth client id, or GitHub refused it (`BackupGitHubError`) |
+| `github-signin-needed` | no approved sign-in is waiting, it is too old, GitHub no longer accepts it, or it lacks `repo` (`BackupGitHubError`) |
+| `github-failed` | GitHub answered with an error, e.g. creating the repository failed (`BackupGitHubError`) |
 
 The four `GitError` reasons are read from git's and ssh's English messages; any other git failure has no reason.
 
 ### In the desktop client
 
 Settings › Backup & sync (`apps/cli-gui/src/components/backup/`) covers connecting (new backup or restore from an
-existing one), status, conflicts, missing keys, snapshots, history and disconnecting. Automatic sync runs in the client,
+existing one, each with GitHub or a Git URL), status, conflicts, missing keys, snapshots, history and disconnecting. Automatic sync runs in the client,
 since the CLI has no resident process:
 
 - after a change made through the client (install, enable, config, update, bulk actions…) has been quiet for about 2 minutes, it backs up;
@@ -266,6 +329,6 @@ since the CLI has no resident process:
 
 - **Automatic sync from the CLI**; only the desktop client syncs on its own.
 - **First-launch choice** between starting fresh and restoring; the client's backup page has a restore entry instead.
-- **GitHub sign-in** with an automatically created private repository.
+- **Other hosts' sign-in:** only GitHub (github.com) creates the repository; GitLab, Gitea and others connect by URL.
 - **Disconnecting further:** revoking authorization, deleting the remote.
 - **Registered projects** in the backup.

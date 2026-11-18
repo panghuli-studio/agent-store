@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Github } from 'lucide-react'
 import type { BackupConflict, BackupConflictChoice, BackupConnectResult, BackupSnapshot } from '@as/types'
 import { useI18n, useT } from '../../i18n'
 import { errorText } from '../../lib/rpc'
@@ -14,7 +15,9 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogTitle } from '..
 import { Input } from '../ui/input'
 import { Banner } from '../ui/states'
 import { toast } from '../ui/toast'
+import { Segmented } from '../ui/segmented'
 import { useSyncAction } from './actions'
+import { GitHubConnect } from './GitHubConnect'
 
 function fmt(template: string, ...values: (string | number)[]): string {
   return values.reduce<string>((s, v, i) => s.replace(`{${i}}`, String(v)), template)
@@ -57,6 +60,7 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
   const [error, setError] = useState<FriendlyError | null>(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<BackupConnectResult | null>(null)
+  const [method, setMethod] = useState<'github' | 'url'>('github')
   const primary = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -148,6 +152,30 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
     )
   }
 
+  const header = (active: boolean) => (
+    <>
+      <DialogTitle>{t(mode === 'restore' ? 'bk.connectRestoreT' : 'bk.connectT')}</DialogTitle>
+      {!active && (
+        <Segmented
+          label={t('bk.method')}
+          value={method}
+          className="mb-3.5"
+          options={[
+            { value: 'github', label: <><Github className="h-3.5 w-3.5" />{t('bk.methodGithub')}</> },
+            { value: 'url', label: t('bk.methodUrl') },
+          ]}
+          onChange={(v) => {
+            setError(null)
+            setInvalid(null)
+            setMethod(v)
+          }}
+        />
+      )}
+    </>
+  )
+
+  if (method === 'github') return <GitHubConnect mode={mode} header={header} onClose={onClose} onDone={setDone} />
+
   return (
     <>
       <DialogBody>
@@ -158,12 +186,12 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
             if (!busy) void submit()
           }}
         >
-          <DialogTitle>{t(mode === 'restore' ? 'bk.connectRestoreT' : 'bk.connectT')}</DialogTitle>
+          {header(busy)}
           <p className="mb-3.5 text-[13px] text-fg-2">{t('bk.connectD')}</p>
           <Field id="backup-remote" label={t('bk.remote')}>
             <Input
               id="backup-remote"
-              data-autofocus
+              autoFocus
               mono
               autoComplete="off"
               spellCheck={false}

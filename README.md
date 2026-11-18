@@ -59,7 +59,8 @@ aas projects exec ~/code/web -- claude             # 带上本机保存的值启
 把本机装的技能、MCP、供应商和各 agent 的开关备份到自己的 Git 仓库，在别的设备上恢复和同步。密钥不上传：
 
 ```sh
-aas backup connect git@github.com:me/agent-store-backup.git   # 空仓库，或已有的 Agent Store 备份
+aas backup connect --github                        # 用 GitHub 设备码登录，自动建私有仓库（或连上以前的备份）
+aas backup connect git@github.com:me/agent-store-backup.git   # 或者：空仓库，或已有的 Agent Store 备份
 aas backup now                                     # 上传本机改动，并应用其他设备的改动
 aas backup pull                                    # 新设备：只把备份装到本机
 aas backup conflicts                               # 两边都改过的条目
