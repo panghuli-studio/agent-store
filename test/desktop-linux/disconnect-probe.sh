@@ -152,29 +152,37 @@ run_variant() {
 run_variant plain-en plain en
 run_variant plain-zh plain zh
 run_variant wd-zh wd zh
-run_variant wd-en wd en
-# GTK picks an input method by locale; for zh it may differ from en.
+# GTK picks an input method by locale: XIM for zh, which this container has no server for.
 run_variant plain-zh-im-simple plain zh GTK_IM_MODULE=gtk-im-context-simple
-run_variant wd-zh-again wd zh
+# A desktop with an input method: IBus serving XIM, GTK still on its default (XIM) module.
+if command -v ibus-daemon >/dev/null; then
+  ibus-daemon --xim --daemonize --replace >"$OUT/ibus.log" 2>&1
+  sleep 3
+  run_variant plain-zh-xim-ibus plain zh XMODIFIERS=@im=ibus
+  ibus exit >/dev/null 2>&1
+fi
 
-# 2b. The minimal page: same WebKitGTK, fonts, locale and display, only the copy.
-for lang in zh en; do
+# 2b. The minimal page: same WebKitGTK, fonts, locale and display, only the copy; then the
+#     Chinese one again with GTK's simple input method.
+for v in zh en zh-im-simple; do
+  lang=${v%%-*}
   loc=(LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US:en)
   [ "$lang" = zh ] && loc=(LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 LANGUAGE=zh_CN:zh)
-  log "== minimal-$lang"
-  env "${loc[@]}" python3 -I /work/test/desktop-linux/minimal-page.py "$lang" >"$OUT/minimal-$lang.log" 2>&1 &
+  [ "$v" = zh-im-simple ] && loc+=(GTK_IM_MODULE=gtk-im-context-simple)
+  log "== minimal-$v"
+  env "${loc[@]}" python3 -I /work/test/desktop-linux/minimal-page.py "$lang" >"$OUT/minimal-$v.log" 2>&1 &
   mpid=$!
   sleep 6
   point_at_window 'Minimal Page'
   xdotool type --delay 40 me/agent-store-backup
   xdotool key ctrl+a ctrl+c
   sleep 2
-  probe "minimal-$lang-1-typed" 'me/agent-store-backup' ''
+  probe "minimal-$v-1-typed" 'me/agent-store-backup' ''
   xdotool key Tab Tab Return
   sleep 5
-  probe "minimal-$lang-2-code-5s" 'HQLC.RT4P' ''
+  probe "minimal-$v-2-code-5s" 'HQLC.RT4P' ''
   sleep 20
-  probe "minimal-$lang-3-code-25s" 'HQLC.RT4P' ''
+  probe "minimal-$v-3-code-25s" 'HQLC.RT4P' ''
   kill "$mpid" 2>/dev/null
   sleep 2
 done

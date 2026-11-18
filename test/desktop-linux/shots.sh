@@ -49,6 +49,10 @@ links_to() { [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; }
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
 export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+# No input method in the container either. For zh, ja, ko and th locales GTK picks its XIM
+# module by default; with no XIM server, the window stops repainting once a text field has
+# focus while the page itself keeps updating (#233, measured by disconnect-probe.sh).
+export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
 sleep 2
 eval "$(dbus-launch --sh-syntax)"
