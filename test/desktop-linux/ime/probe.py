@@ -2,6 +2,7 @@
 """Native presentation/IME probe. Logs only this disposable page's test text."""
 import json
 import os
+import sys
 import time
 import gi
 
@@ -14,6 +15,11 @@ manager.register_script_message_handler('probe')
 manager.connect('script-message-received::probe', lambda _, result: print(
     json.dumps({'time': time.time(), 'page': json.loads(result.get_js_value().to_string())}), flush=True))
 view = WebKit2.WebView.new_with_user_content_manager(manager)
+draws = [0]
+def did_draw(*_):
+    draws[0] += 1
+    return False
+view.connect_after('draw', did_draw)
 view.load_html('''<!doctype html><meta charset="utf-8">
 <style>body {background:#14141a;color:white;font:32px sans-serif} input {font:32px sans-serif}
 #frame {padding:40px;background:white;color:black;font:32px monospace}</style>
@@ -36,11 +42,16 @@ win.show_all()
 def native_state():
     window = view.get_window()
     print('GTK_WINDOW ' + json.dumps({'time': time.time(), 'native': window.has_native(),
-          'focused': win.is_active()}), file=__import__('sys').stderr, flush=True)
+          'focused': win.is_active(), 'draws': draws[0]}), file=sys.stderr, flush=True)
     return True
 native_state()
-if os.environ.get('IME_FORCE_NATIVE') == '1':
+def promote_native():
     view.get_window().ensure_native()
     native_state()
+    return False
+if os.environ.get('IME_FORCE_NATIVE') == 'early':
+    promote_native()
+elif os.environ.get('IME_FORCE_NATIVE') == 'late':
+    GLib.timeout_add(2000, promote_native)
 GLib.timeout_add(1000, native_state)
 Gtk.main()

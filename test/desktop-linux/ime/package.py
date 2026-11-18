@@ -43,10 +43,9 @@ try:
     if os.environ['GDK_BACKEND'] == 'x11' and os.environ.get('IME_SESSION') == 'bare':
         subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Agent Store', 'windowfocus'], check=True)
     elif os.environ['GDK_BACKEND'] == 'x11':
-        subprocess.run(['xdotool', 'key', 'Escape', 'Escape'], check=True)
         subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Agent Store', 'windowactivate', '--sync'], check=True)
     else:
-        subprocess.run(['xdotool', 'key', 'Escape', 'Escape', 'alt+Tab'], check=True)
+        subprocess.run(['xdotool', 'key', 'alt+Tab'], check=True)
         time.sleep(1)
     js('''window.__imeEvents = [];
       for (const kind of ['compositionstart','compositionupdate','compositionend','input','focusin'])

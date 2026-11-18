@@ -39,7 +39,11 @@ elif [ "$mode" = x11 ]; then
 fi
 if [ "$mode" != wayland ]; then export GDK_BACKEND=x11; fi
 sleep 5
-if [ "$mode" != bare ]; then kill -0 "${pids[1]}"; fi
+if [ "$mode" != bare ]; then
+  kill -0 "${pids[1]}"
+  # Close the initial overview before any engine-backed application gets focus.
+  xdotool key Escape Escape
+fi
 case "$rendering" in
   disabled) export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 ;;
   compositing-off) export WEBKIT_DISABLE_COMPOSITING_MODE=1 ;;
@@ -61,10 +65,11 @@ for language in zh ja ko; do
   esac
   gsettings set org.gnome.desktop.input-sources sources "[('ibus', '$engine')]"
   sleep 2
-  for module in ibus xim gtk-im-context-simple native-control; do
+  for module in ibus xim gtk-im-context-simple native-early native-late; do
+    if [[ "$module" = native-* ]] && { [ "$language" != zh ] || [ "$mode" = wayland ]; }; then continue; fi
     gtk_module=$module
-    force_native=0
-    if [ "$module" = native-control ]; then gtk_module=gtk-im-context-simple; force_native=1; fi
+    force_native=none
+    if [[ "$module" = native-* ]]; then gtk_module=gtk-im-context-simple; force_native=${module#native-}; fi
     name="$language-$module"
     LANG="$locale" LC_ALL="$locale" GTK_IM_MODULE="$gtk_module" IME_FORCE_NATIVE="$force_native" python3 test/desktop-linux/ime/probe.py >"$out/$name.jsonl" 2>"$out/$name.log" &
     page=$!; pids+=("$page")
@@ -73,11 +78,10 @@ for language in zh ja ko; do
     if [ "$mode" = bare ]; then
       xdotool search --onlyvisible --name 'IME presentation probe' windowfocus
     elif [ "$mode" = x11 ]; then
-      xdotool key Escape Escape
       xdotool search --onlyvisible --name 'IME presentation probe' windowactivate --sync
     else
       # Shell starts in overview; DOM autofocus does not activate a native window.
-      xdotool key Escape Escape alt+Tab
+      xdotool key alt+Tab
       sleep 1
     fi
     # XTEST enters the nested compositor too; events in JSONL prove whether input reached GTK.
@@ -96,7 +100,7 @@ for language in zh ja ko; do
     wait "$page" || true
     # Do not retain a reaped PID that might be reused during the next iteration.
     unset 'pids[${#pids[@]}-1]'
-    if [ -x /usr/bin/app ] && [ "$module" != native-control ]; then
+    if [ -x /usr/bin/app ] && [[ "$module" != native-* ]]; then
       LANG="$locale" LC_ALL="$locale" GTK_IM_MODULE="$module" python3 test/desktop-linux/ime/package.py "$out/$name-package" "$keys"
     fi
   done

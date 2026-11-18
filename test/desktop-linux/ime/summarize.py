@@ -27,10 +27,19 @@ for path in sorted(out.glob('*.jsonl')):
     advances = len(frames) == 3 and all(frame['native'] is not None for frame in frames) and (
         frames[-1]['native'] > frames[0]['native'])
     rows.append({'case': path.stem, 'text': text, 'compositionend': composed, 'cjk_commit': cjk,
-                 'input_events': len(inputs), 'frames': frames,
+                 'input_events': len(inputs), 'native_focused': any(e['page'].get('focused') for e in events), 'frames': frames,
                  'native_counter_tracks_dom': bool(frames) and matches and advances,
                  'note': 'A rendering result only; no CJK coverage without a real CJK commit.'})
 (out / 'summary.json').write_text(json.dumps(rows, ensure_ascii=False, indent=2))
 for row in rows:
     print(row['case'], 'CJK commit:', row['cjk_commit'], 'compositionend:', row['compositionend'],
           'native tracks DOM:', row['native_counter_tracks_dom'], 'text:', repr(row['text']))
+
+packages = []
+for path in sorted(out.glob('*package-1.json')):
+    data = json.loads(path.read_text())
+    inputs = [event.get('text', '') for event in data.get('events', []) if event['kind'] == 'input']
+    packages.append({'case': path.stem, 'focused': data.get('focused'),
+                     'palette': data.get('palette'), 'text': data.get('text'),
+                     'cjk_commit': any(re.search(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]', text) for text in inputs)})
+(out / 'package-summary.json').write_text(json.dumps(packages, ensure_ascii=False, indent=2))
