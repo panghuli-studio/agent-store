@@ -4,7 +4,7 @@ export type AgentApp = 'claude' | 'codex'
 export type NavView = 'browse' | 'overview' | 'settings' | 'projects' | 'project'
 export type CategoryFilter = 'all' | 'provider' | 'skill' | 'mcp'
 export type SettingsTab = 'general' | 'agents' | 'data' | 'backup' | 'account' | 'cli' | 'about'
-export type ShellDialog = 'shortcuts' | 'activity' | 'requestLog' | 'welcome' | 'import' | null
+export type ShellDialog = 'first-run-backup' | 'shortcuts' | 'activity' | 'requestLog' | 'welcome' | 'import' | null
 export type DiscoverKind = 'all' | 'skill' | 'mcp' | 'provider'
 
 interface AppStateValue {
@@ -41,6 +41,9 @@ interface AppStateValue {
   discoverFavorites: boolean
   setDiscoverFavorites: (v: boolean) => void
   /** A catalog id the install dialog should open for; the dialog consumes it. */
+  /** Keeps first-launch prompts from trapping focus behind an install link. */
+  installDialogOpen: boolean
+  setInstallDialogOpen: (open: boolean) => void
   installRef: string | null
   requestInstall: (ref: string | null) => void
   /** The project `navView === 'project'` shows. */
@@ -68,6 +71,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [shellDialog, setShellDialog] = useState<ShellDialog>(null)
   const [discoverKind, setDiscoverKind] = useState<DiscoverKind>('all')
   const [discoverFavorites, setDiscoverFavorites] = useState(false)
+  const [installDialogOpen, setInstallDialogOpen] = useState(false)
   const [installRef, requestInstall] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [installInto, setInstallInto] = useState<string | null>(null)
@@ -92,6 +96,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         shellDialog, setShellDialog,
         discoverKind, setDiscoverKind,
         discoverFavorites, setDiscoverFavorites,
+        installDialogOpen, setInstallDialogOpen,
         installRef, requestInstall,
         projectId, setProjectId,
         installInto, setInstallInto,

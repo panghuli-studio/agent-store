@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Github } from 'lucide-react'
 import type { BackupConflict, BackupConflictChoice, BackupConnectResult, BackupSnapshot } from '@as/types'
 import { useI18n, useT } from '../../i18n'
-import { errorText } from '../../lib/rpc'
+import { errorText, RpcError } from '../../lib/rpc'
 import { counted, describeBackupError, deviceSlug, formatWhen, isHttpsRemote, redactRemote, snapshotLabel } from '../../lib/backup'
 import type { FriendlyError } from '../../lib/errors'
 import { useBackup } from '../../state/Backup'
@@ -46,7 +46,7 @@ function Failure({ title, error }: { title: string; error: FriendlyError }) {
   )
 }
 
-function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () => void }) {
+function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'restore'; firstRun?: boolean; onClose: () => void }) {
   const t = useT()
   const backup = useBackup()!
   const runSync = useSyncAction()
@@ -59,6 +59,7 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
   const [invalid, setInvalid] = useState<string | null>(null)
   const [error, setError] = useState<FriendlyError | null>(null)
   const [busy, setBusy] = useState(false)
+  const [retainConnection, setRetainConnection] = useState(false)
   const [done, setDone] = useState<BackupConnectResult | null>(null)
   const [method, setMethod] = useState<'github' | 'url'>('github')
   const primary = useRef<HTMLButtonElement>(null)
@@ -95,9 +96,38 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
     }
   }
 
-  function next(mode: 'now' | 'pull') {
+  async function closeConnection() {
+    if (busy) return
+    if (firstRun && done && !retainConnection) {
+      setBusy(true)
+      try {
+        await backup.disconnect()
+      } catch (err) {
+        setError(describeBackupError(err, t))
+        setBusy(false)
+        return
+      }
+    }
     onClose()
-    void runSync(mode)
+  }
+
+  async function next(mode: 'now' | 'pull') {
+    if (!firstRun) {
+      onClose()
+      void runSync(mode)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await backup.sync('pull', true)
+      onClose()
+    } catch (err) {
+      // Preserve recovery snapshots if cleanup itself failed.
+      setRetainConnection(err instanceof RpcError && err.fields.reason === 'rollback-failed')
+      setError(describeBackupError(err, t))
+      setBusy(false)
+    }
   }
 
   if (done) {
@@ -118,17 +148,22 @@ function ConnectBody({ mode, onClose }: { mode: 'new' | 'restore'; onClose: () =
                   <dt className="font-semibold text-fg">{t('bk.pullChoice')}</dt>
                   <dd className="text-fg-2">{t('bk.pullChoiceD')}</dd>
                 </div>
-                <div>
+                {!firstRun && <div>
                   <dt className="font-semibold text-fg">{t('bk.mergeChoice')}</dt>
                   <dd className="text-fg-2">{t('bk.mergeChoiceD')}</dd>
-                </div>
+                </div>}
               </dl>
             </>
           )}
+          {error && <Failure title={t('bk.failed.pull')} error={error} />}
         </DialogBody>
         <DialogFooter>
-          <Button onClick={onClose}>{t('bk.later')}</Button>
-          {items === 0 ? (
+          <Button disabled={busy} onClick={() => void closeConnection()}>{t('bk.later')}</Button>
+          {firstRun ? (
+            <Button ref={primary} variant="primary" disabled={busy || items === 0 || retainConnection} onClick={() => void next('pull')}>
+              {t('bk.pullChoice')}
+            </Button>
+          ) : items === 0 ? (
             <Button ref={primary} variant="primary" onClick={() => next('now')}>
               {t('bk.now')}
             </Button>
@@ -433,7 +468,7 @@ export function BackupDialogs() {
   const { dialog, openDialog } = backup
   const close = () => openDialog(null)
   return (
-    <Dialog open={dialog !== null} onOpenChange={(open) => !open && close()}>
+    <Dialog open={dialog !== null} onOpenChange={(open) => !open && !backup.busy && !(dialog?.kind === 'connect' && dialog.firstRun) && close()}>
       <DialogContent
         ref={contentRef}
         width={dialog?.kind === 'connect' ? 'wide' : 'md'}
@@ -446,7 +481,7 @@ export function BackupDialogs() {
           }
         }}
       >
-        {dialog?.kind === 'connect' && <ConnectBody mode={dialog.mode} onClose={close} />}
+        {dialog?.kind === 'connect' && <ConnectBody mode={dialog.mode} firstRun={dialog.firstRun} onClose={close} />}
         {dialog?.kind === 'conflict' && <ConflictBody key={dialog.conflict.key} conflict={dialog.conflict} onClose={close} />}
         {dialog?.kind === 'restore' && <RestoreBody key={dialog.snapshot.id} snapshot={dialog.snapshot} onClose={close} />}
         {dialog?.kind === 'disconnect' && <DisconnectBody onClose={close} />}

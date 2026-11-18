@@ -399,3 +399,80 @@ test('an operation that finds the backup lock held says so with reason busy', as
     await release()
   }
 }, 60_000)
+
+test('first-launch pull restores an empty library and keeps missing keys local', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const b = await device('first-launch')
+  await b.engine.connectBackup({ remote })
+  const result = await b.engine.pullBackup({ firstRun: true })
+  expect(result.failed).toEqual([])
+  expect(result.missingSecrets.length).toBeGreaterThan(0)
+  expect((await b.engine.list()).length).toBe(4)
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('empty library')
+})
+
+test('first-launch pull rolls back other installs and agent config after an enable failure', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const head = await runGit(remote, ['rev-parse', 'main'])
+  const b = await device('first-launch-failure')
+  await b.engine.connectBackup({ remote })
+  const enable = b.engine.enable.bind(b.engine)
+  b.engine.enable = async (slug, target, options) => {
+    if (slug === 'plain-mcp' && target === 'codex') throw new Error('simulated enable failure')
+    return enable(slug, target, options)
+  }
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('could not be fully restored')
+  expect(await b.engine.list()).toEqual([])
+  expect(existsSync(skillPath(b))).toBe(false)
+  expect((await b.engine.getBackupStatus()).lastSync).toBeUndefined()
+  expect(await runGit(remote, ['rev-parse', 'main'])).toBe(head)
+  const claude = existsSync(join(b.claudeDir, 'settings.json')) ? await readFile(join(b.claudeDir, 'settings.json'), 'utf-8') : ''
+  expect(claude).not.toContain('plain-server')
+})
+
+test('first-launch pull cleans files from a hook that failed before registration', async () => {
+  serveFetch()
+  const a = await device('hook-source')
+  await a.engine.install('plain-mcp')
+  const manifestPath = join(a.aasHome, 'mcps', 'plain-mcp', 'manifest.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'))
+  manifest.installHook.steps = [
+    { type: 'config', patch: { region: 'eu' } },
+    { type: 'file', url: 'https://example.test/fail', dest: 'download' },
+  ]
+  await writeFile(manifestPath, JSON.stringify(manifest))
+  const remote = await bareRemote()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  globalThis.fetch = (async () => new Response('unavailable', { status: 503 })) as unknown as typeof fetch
+  const b = await device('hook-failure')
+  await b.engine.connectBackup({ remote })
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('could not be fully restored')
+  expect(await b.engine.list()).toEqual([])
+  expect(existsSync(join(b.aasHome, 'mcps', 'plain-mcp'))).toBe(false)
+
+  await mkdir(join(b.aasHome, 'mcps', 'plain-mcp'))
+  await writeFile(join(b.aasHome, 'mcps', 'plain-mcp', 'keep'), 'user data')
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('existing item directory')
+  expect(await readFile(join(b.aasHome, 'mcps', 'plain-mcp', 'keep'), 'utf-8')).toBe('user data')
+})
+
+test('first-launch pull reports rollback failure without losing recovery snapshots', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const b = await device('rollback-failure')
+  await b.engine.connectBackup({ remote })
+  b.engine.enable = async () => { throw new Error('enable failed') }
+  b.engine.uninstall = async () => { throw new Error('uninstall failed') }
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toMatchObject({ reason: 'rollback-failed' })
+  expect((await b.engine.listBackupSnapshots()).length).toBeGreaterThan(0)
+  expect((await b.engine.getBackupStatus()).connected).toBe(true)
+})

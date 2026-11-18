@@ -1,6 +1,6 @@
 // Backup to a Git repository the user owns, and sync between devices (issue #112).
 // docs/backup-sync.md describes the behavior; the merge itself is merge.ts.
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { hostname, tmpdir } from 'os'
 import { join } from 'path'
 import lockfile from 'proper-lockfile'
@@ -10,7 +10,7 @@ import type {
   BackupSnapshot, BackupStatus, BackupSyncResult, Engine, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll, Paths,
 } from '@as/types'
 import type { Catalog } from '../catalog'
-import { assertSafeSlug } from '../paths'
+import { assertSafeSlug, itemDir } from '../paths'
 import { findEntry, readRegistry } from '../registry/index'
 import { applyItem, installCopy, type ApplyContext, type ApplyOutcome } from './apply'
 import { DEFAULT_MAX_ITEM_BYTES, exportLocal, type ExportResult, type WantedTarget } from './export'
@@ -51,6 +51,14 @@ export class BackupRemoteRefusedError extends Error {
   constructor(message: string, readonly reason: 'foreign-repo' | 'unsupported-schema' | 'token-needs-https') {
     super(message)
     this.name = 'BackupRemoteRefusedError'
+  }
+}
+
+export class BackupRollbackError extends Error {
+  readonly reason = 'rollback-failed'
+  constructor() {
+    super('First-launch restore failed and could not be completely undone; keep the backup connection and inspect the library before retrying')
+    this.name = 'BackupRollbackError'
   }
 }
 
@@ -298,9 +306,12 @@ export class BackupService {
     return head
   }
 
-  private async sync(mode: 'now' | 'pull'): Promise<BackupSyncResult> {
+  private async sync(mode: 'now' | 'pull', firstRun = false): Promise<BackupSyncResult> {
     return this.locked(async () => {
       const s = await this.session()
+      if (firstRun && (await readRegistry(this.aasHome)).installed.length) {
+        throw new Error('First-launch restore requires an empty library')
+      }
       return withTemp(async scratch => {
         const local = await this.exportTree(s, await subdir(scratch, 'local'))
         const snapshot = await this.snapshot(s, local.tree, mode === 'now' ? 'Before backing up' : 'Before pulling')
@@ -368,48 +379,88 @@ export class BackupService {
           const retry = localIsBase.has(d.key) && !same(l, r)
           return content || state || retry ? [{ key: d.key, parts: { content: content || (retry && !d.keepLocalContent), state: state || retry } }] : []
         })
-        const { applied, outcomes, errors } = await this.applyAll(targetDir, toApply)
-        const appliedKeys = new Set(toApply.map(t => t.key))
-        const blocked = [
-          ...s.state.blocked.filter(b => !appliedKeys.has(b.key)),
-          ...[...outcomes.values()].flatMap(o => o.blocked),
-        ]
-        s.state.blocked = blocked
-        const differ = await this.stillDifferent(s, scratch, targetItems,
-          toApply.filter(t => !errors.has(t.key) && !outcomes.get(t.key)?.notRestorable).map(t => ({ key: t.key, ...t.parts })))
+        const freshDirs: string[] = []
+        if (firstRun) {
+          for (const t of toApply) {
+            const { category, slug } = parseKey(t.key)
+            const dir = itemDir(this.aasHome, category, slug)
+            try {
+              await lstat(dir)
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+              freshDirs.push(dir)
+              continue
+            }
+            throw new Error('First-launch restore found an existing item directory; use Backup & sync after moving or importing it')
+          }
+        }
+        try {
+          const { applied, outcomes, errors } = await this.applyAll(targetDir, toApply)
+          const appliedKeys = new Set(toApply.map(t => t.key))
+          const blocked = [
+            ...s.state.blocked.filter(b => !appliedKeys.has(b.key)),
+            ...[...outcomes.values()].flatMap(o => o.blocked),
+          ]
+          s.state.blocked = blocked
+          const differ = await this.stillDifferent(s, scratch, targetItems,
+            toApply.filter(t => !errors.has(t.key) && !outcomes.get(t.key)?.notRestorable).map(t => ({ key: t.key, ...t.parts })))
 
-        const now = new Date().toISOString()
-        const oldConflicts = new Map(s.state.conflicts.map(c => [c.key, c]))
-        const conflicts: BackupConflict[] = []
-        for (const d of decisions) {
-          if (!d.conflict) continue
-          const old = oldConflicts.get(d.key)
-          const remoteDevice = remoteCommit ? await s.repo.lastAuthor(remoteCommit, itemPath(d.key)) : undefined
-          conflicts.push({ ...ref(d.key), reason: d.conflict.reason, parts: d.conflict.parts, ...(remoteDevice ? { remoteDevice } : {}), detectedAt: old?.detectedAt ?? now })
-        }
-        const failed: BackupFailure[] = [
-          ...s.state.failed.filter(f => !appliedKeys.has(f.key) && !same(localItems.get(f.key), remoteItems.get(f.key))),
-          ...[...errors].map(([key, message]) => ({ ...ref(key), message, at: now })),
-          ...[...differ].map(key => ({ ...ref(key), message: 'after applying the backup, this machine still differs from it', at: now })),
-        ]
-        const restorable = [...s.state.notRestorable.filter(n => !appliedKeys.has(n.key)), ...toApply.filter(t => outcomes.get(t.key)?.notRestorable).map(t => ref(t.key))]
-          .filter(n => targetItems.has(n.key) && !localItems.has(n.key))
-        const state: SyncState = {
-          ...(synced ? { lastSync: { commit: synced, at: now } } : s.state.lastSync ? { lastSync: s.state.lastSync } : {}),
-          conflicts, blocked, failed, notRestorable: restorable,
-        }
-        await writeState(this.aasHome, state)
-        return {
-          pushed,
-          uploaded: uploaded.map(u => ref(u.key)),
-          applied,
-          snapshot,
-          conflicts,
-          missingSecrets: missingSecrets(blocked),
-          failed: failures(state),
-          localOnly: local.result.localOnly,
-          notRestorable: restorable,
-          excludedFiles: local.result.excludedFiles,
+          const now = new Date().toISOString()
+          const oldConflicts = new Map(s.state.conflicts.map(c => [c.key, c]))
+          const conflicts: BackupConflict[] = []
+          for (const d of decisions) {
+            if (!d.conflict) continue
+            const old = oldConflicts.get(d.key)
+            const remoteDevice = remoteCommit ? await s.repo.lastAuthor(remoteCommit, itemPath(d.key)) : undefined
+            conflicts.push({ ...ref(d.key), reason: d.conflict.reason, parts: d.conflict.parts, ...(remoteDevice ? { remoteDevice } : {}), detectedAt: old?.detectedAt ?? now })
+          }
+          const failed: BackupFailure[] = [
+            ...s.state.failed.filter(f => !appliedKeys.has(f.key) && !same(localItems.get(f.key), remoteItems.get(f.key))),
+            ...[...errors].map(([key, message]) => ({ ...ref(key), message, at: now })),
+            ...[...differ].map(key => ({ ...ref(key), message: 'after applying the backup, this machine still differs from it', at: now })),
+          ]
+          const restorable = [...s.state.notRestorable.filter(n => !appliedKeys.has(n.key)), ...toApply.filter(t => outcomes.get(t.key)?.notRestorable).map(t => ref(t.key))]
+            .filter(n => targetItems.has(n.key) && !localItems.has(n.key))
+          const state: SyncState = {
+            ...(synced ? { lastSync: { commit: synced, at: now } } : s.state.lastSync ? { lastSync: s.state.lastSync } : {}),
+            conflicts, blocked, failed, notRestorable: restorable,
+          }
+          if (firstRun && (failures(state).length || conflicts.length || restorable.length)) {
+            throw new Error('The backup could not be fully restored; the first-launch restore was cancelled')
+          }
+          await writeState(this.aasHome, state)
+          return {
+            pushed,
+            uploaded: uploaded.map(u => ref(u.key)),
+            applied,
+            snapshot,
+            conflicts,
+            missingSecrets: missingSecrets(blocked),
+            failed: failures(state),
+            localOnly: local.result.localOnly,
+            notRestorable: restorable,
+            excludedFiles: local.result.excludedFiles,
+          }
+        } catch (error) {
+          if (firstRun) {
+            // Undo every attempted item, including the one whose install/enable failed.
+            // Uninstall uses the engine's ownership rules to restore existing agent entries.
+            try {
+              const registered = (await readRegistry(this.aasHome)).installed
+              const rollback = await this.applyAll(local.dir, toApply.filter(t => {
+                const { category, slug } = parseKey(t.key)
+                return registered.some(i => i.category === category && i.slug === slug)
+              }).map(t => ({ key: t.key, parts: { content: true, state: true } })).reverse())
+              if (rollback.errors.size) throw new BackupRollbackError()
+              // An install hook can fail before registering its item. These paths
+              // were absent before the attempt, so no preexisting data is removed.
+              for (const dir of freshDirs) await rm(dir, { recursive: true, force: true })
+              await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
+            } catch {
+              throw new BackupRollbackError()
+            }
+          }
+          throw error
         }
       })
     })
@@ -419,8 +470,8 @@ export class BackupService {
     return this.sync('now')
   }
 
-  pull(): Promise<BackupSyncResult> {
-    return this.sync('pull')
+  pull(options?: { firstRun?: boolean }): Promise<BackupSyncResult> {
+    return this.sync('pull', options?.firstRun === true)
   }
 
   async connect(options: BackupConnectOptions): Promise<BackupConnectResult> {

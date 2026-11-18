@@ -63,8 +63,8 @@ afterEach(async () => {
 })
 
 function Probe() {
-  const { navView, categoryFilter } = useAppState()
-  return <div data-testid="nav">{`${navView}:${categoryFilter}`}</div>
+  const { navView, categoryFilter, installDialogOpen, setInstallDialogOpen } = useAppState()
+  return <><div data-testid="nav">{`${navView}:${categoryFilter}`}</div><button data-testid="toggle-install" onClick={() => setInstallDialogOpen(!installDialogOpen)}>Install dialog</button></>
 }
 
 function Shell() {
@@ -172,4 +172,17 @@ test('stays closed once seen, or when the app data dir cannot be read', async ()
   render(<AppStateProvider><Shell /></AppStateProvider>)
   await new Promise((r) => setTimeout(r, 10))
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+
+test('welcome/import guide yields to installs without recording dismissal or resetting its step', async () => {
+  render(<AppStateProvider><Shell /></AppStateProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '继续' }))
+  expect(await screen.findByText('发现已有的技能和 MCP')).toBeInTheDocument()
+  fireEvent.click(screen.getByTestId('toggle-install'))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(writes).toEqual([])
+  fireEvent.click(screen.getByTestId('toggle-install'))
+  expect(await screen.findByText('发现已有的技能和 MCP')).toBeInTheDocument()
+  expect(writes).toEqual([])
 })

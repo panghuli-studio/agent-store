@@ -150,7 +150,7 @@ export function resetLaunchLinksForTest() {
  */
 export function InstallDialog() {
   const { locale, t } = useI18n()
-  const { installRef, requestInstall, setNavView, setCategoryFilter, setSelectedSlug, setEditingConfigSlug, bumpInstalledVersion, installInto } = useAppState()
+  const { installRef, requestInstall, setNavView, setCategoryFilter, setSelectedSlug, setEditingConfigSlug, bumpInstalledVersion, installInto, setInstallDialogOpen } = useAppState()
   const { appendLine } = useTerminalLog()
   const { projects, summaries, reload: reloadProjects } = useProjects()
   const openProject = useOpenProject()
@@ -253,6 +253,12 @@ export function InstallDialog() {
     void start(installRef, 'app')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installRef])
+
+  const isOpen = flow !== null
+  useEffect(() => {
+    setInstallDialogOpen(isOpen)
+    return () => setInstallDialogOpen(false)
+  }, [isOpen, setInstallDialogOpen])
 
   const phaseKind = flow?.phase.kind
   useEffect(() => {

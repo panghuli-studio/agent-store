@@ -85,10 +85,11 @@ function mockRpc(overrides: Record<string, (...args: unknown[]) => unknown> = {}
 }
 
 function Probe() {
-  const { selectedSlug, navView, categoryFilter, editingConfigSlug, projectId } = useAppState()
+  const { selectedSlug, navView, categoryFilter, editingConfigSlug, projectId, installDialogOpen } = useAppState()
   const { lines } = useTerminalLog()
   return (
     <div>
+      <span data-testid="install-open">{String(installDialogOpen)}</span>
       <span data-testid="selected">{selectedSlug ?? ''}</span>
       <span data-testid="nav">{navView}</span>
       <span data-testid="category">{categoryFilter}</span>
@@ -696,4 +697,16 @@ test('a project that already has the item is greyed out in the location list', a
   const select = location(dialog)
   expect(select.options[1].textContent).toContain('已在这个项目中')
   expect(select.options[2].disabled).toBe(false)
+})
+
+
+test('reports the whole install-dialog lifecycle so first-launch prompts can defer', async () => {
+  mockRpc()
+  await renderDialog()
+  expect(screen.getByTestId('install-open').textContent).toBe('false')
+  await openLink('agent-store://install?slug=filesystem')
+  await screen.findByRole('dialog', { name: '确认安装' })
+  expect(screen.getByTestId('install-open').textContent).toBe('true')
+  await click('取消')
+  await waitFor(() => expect(screen.getByTestId('install-open').textContent).toBe('false'))
 })

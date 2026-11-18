@@ -6,6 +6,12 @@ type Dict = Record<string, unknown>
 
 export const backupZh: Dict = {
   bk: {
+    firstTitle: '在这台电脑上开始使用',
+    firstDescription: '从空白开始，或从自己的 Git 仓库恢复技能、MCP 和供应商。密钥不会从备份中恢复，需要在本机重新填写。',
+    firstFresh: '从空白开始',
+    firstRestore: '从备份恢复…',
+    firstLater: '以后也可以在设置 › 备份与同步中恢复。',
+    firstSaveFailed: '无法保存首次启动选择，请重试。',
     tab: '备份与同步',
     intro: '把本机装的技能、MCP 和供应商备份到你自己的 Git 仓库，并在多台电脑之间同步。内容只存在这个仓库里，不经过 Agent Store 的服务器。',
     loading: '正在读取备份状态',
@@ -267,6 +273,12 @@ export const backupZh: Dict = {
 
 export const backupEn: Dict = {
   bk: {
+    firstTitle: 'Get started on this computer',
+    firstDescription: 'Start fresh or restore skills, MCP servers and providers from your own Git repository. Secrets are not in the backup; enter them again on this computer.',
+    firstFresh: 'Start fresh',
+    firstRestore: 'Restore from backup…',
+    firstLater: 'You can also restore later in Settings › Backup & sync.',
+    firstSaveFailed: 'Could not save your first-launch choice. Please retry.',
     tab: 'Backup & sync',
     intro: 'Back up the skills, MCP servers and providers installed here to a Git repository you own, and keep your computers in step. The data lives only in that repository; it never passes through Agent Store’s servers.',
     loading: 'Reading the backup status',

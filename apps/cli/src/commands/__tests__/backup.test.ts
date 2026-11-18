@@ -148,3 +148,10 @@ test('the GitHub methods are reachable over RPC and never return the token', asy
   expect(out.map(l => JSON.parse(l).ok)).toEqual([true, true, true, true])
   expect(calls).toEqual([['poll', 'dc-1'], ['connect', { repo: 'new' }], ['cancel']])
 })
+
+test('pullBackup over RPC forwards the first-launch rollback option', async () => {
+  let got: unknown
+  const e = engine({ pullBackup: async (options) => { got = options; return { pushed: null, uploaded: [], applied: [], snapshot: 'before', conflicts: [], missingSecrets: [], failed: [], localOnly: [], notRestorable: [], excludedFiles: [] } } })
+  expect(await runRpc(e, ['pullBackup', '-'], () => undefined, async () => '[{"firstRun":true}]')).toBe(0)
+  expect(got).toEqual({ firstRun: true })
+})

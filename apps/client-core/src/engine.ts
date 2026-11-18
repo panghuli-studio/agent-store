@@ -742,8 +742,8 @@ export class EngineImpl implements Engine {
     return this.backup.backupNow()
   }
 
-  pullBackup(): Promise<BackupSyncResult> {
-    return this.backup.pull()
+  pullBackup(options?: { firstRun?: boolean }): Promise<BackupSyncResult> {
+    return this.backup.pull(options)
   }
 
   resolveBackupConflict(item: string, choice: BackupConflictChoice): Promise<BackupResolveResult> {

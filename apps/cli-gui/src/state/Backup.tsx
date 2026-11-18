@@ -11,7 +11,7 @@ import { useAppState } from './AppState'
 export type BackupOp = 'connect' | 'now' | 'pull' | 'resolve' | 'restore' | 'disconnect'
 
 export type BackupDialog =
-  | { kind: 'connect'; mode: 'new' | 'restore' }
+  | { kind: 'connect'; mode: 'new' | 'restore'; firstRun?: boolean }
   | { kind: 'conflict'; conflict: BackupConflict }
   | { kind: 'restore'; snapshot: BackupSnapshot }
   | { kind: 'disconnect' }
@@ -45,7 +45,7 @@ interface BackupValue {
   connect: (options: BackupConnectOptions) => Promise<BackupConnectResult>
   /** After an approved GitHub sign-in (startGitHubBackupSignIn / pollGitHubBackupSignIn through `read`). */
   connectGitHub: (options: GitHubConnectOptions) => Promise<BackupConnectResult>
-  sync: (mode: 'now' | 'pull') => Promise<BackupSyncResult>
+  sync: (mode: 'now' | 'pull', firstRun?: boolean) => Promise<BackupSyncResult>
   resolve: (item: string, choice: BackupConflictChoice) => Promise<BackupResolveResult>
   restore: (id: string) => Promise<BackupRestoreResult>
   disconnect: () => Promise<void>
@@ -183,8 +183,8 @@ export function BackupProvider({ children, timing = AUTO_TIMING }: { children: R
     [manual]
   )
   const sync = useCallback(
-    (mode: 'now' | 'pull') =>
-      manual(mode, () => callRpc<BackupSyncResult>(mode === 'now' ? 'backupNow' : 'pullBackup'), (r) => {
+    (mode: 'now' | 'pull', firstRun = false) =>
+      manual(mode, () => callRpc<BackupSyncResult>(mode === 'now' ? 'backupNow' : 'pullBackup', firstRun ? [{ firstRun: true }] : []), (r) => {
         if (mode === 'now') dirty.current = false
         lastCheckAt.current = Date.now()
         finishSync(mode, false, r)

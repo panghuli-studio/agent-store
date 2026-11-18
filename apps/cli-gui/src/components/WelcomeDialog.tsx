@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, RefreshCw, Undo2 } from 'lucide-react'
-import type { AgentDetection, ImportApplyResult, ImportScan, McpCandidate, SkillCandidate } from '@as/types'
+import type { AgentDetection, ImportApplyResult, ImportScan, InstalledItem, McpCandidate, SkillCandidate } from '@as/types'
 import { useAppState } from '../state/AppState'
 import { readLocalState, writeLocalState } from '../state/LocalPersistence'
 import { useI18n, type TFn } from '../i18n'
@@ -28,8 +28,16 @@ export function useFirstRunWelcome() {
   useEffect(() => {
     let active = true
     readLocalState<WelcomeState | null>(WELCOME_KEY, null).then(
-      (seen) => {
-        if (active && !seen) setShellDialog('welcome')
+      async (seen) => {
+        if (!active || seen) return
+        try {
+          const choice = await readLocalState('first-launch-backup', false)
+          const installed = await callRpc<InstalledItem[]>('list')
+          if (active) setShellDialog(!choice && installed.length === 0 ? 'first-run-backup' : 'welcome')
+        } catch {
+          // A failed library read must not be mistaken for an empty library.
+          if (active) setShellDialog('welcome')
+        }
       },
       // No app data dir (a plain browser tab): don't nag on every load.
       () => undefined
@@ -224,10 +232,11 @@ export function defaultSelection(scan: ImportScan): string[] {
 /** The first-run guide: detected agents, then what the user already has, then the result. Nothing is written until 导入所选. */
 export function WelcomeDialog() {
   const { t, locale } = useI18n()
-  const { shellDialog, setShellDialog, bumpInstalledVersion } = useAppState()
+  const { shellDialog, setShellDialog, bumpInstalledVersion, installDialogOpen } = useAppState()
   const navigate = useNavigate()
   const primaryRef = useRef<HTMLButtonElement>(null)
-  const open = shellDialog === 'welcome' || shellDialog === 'import'
+  const requested = shellDialog === 'welcome' || shellDialog === 'import'
+  const open = requested && !installDialogOpen
   const [step, setStep] = useState<Step>('agents')
   const [agents, setAgents] = useState<Load<AgentDetection[]>>({ status: 'loading' })
   const [scan, setScan] = useState<Load<ImportScan>>({ status: 'loading' })
@@ -258,7 +267,7 @@ export function WelcomeDialog() {
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!requested) return
     setStep(shellDialog === 'import' ? 'import' : 'agents')
     setApplied(null)
     setUndone(false)
@@ -266,7 +275,7 @@ export function WelcomeDialog() {
     setMatchCatalog(false)
     detect()
     rescan(false)
-  }, [open])
+  }, [requested])
 
   useEffect(() => {
     if (open) primaryRef.current?.focus()
@@ -464,6 +473,7 @@ export function WelcomeDialog() {
     <Dialog open={open} onOpenChange={(next) => !next && finish(false)}>
       <DialogContent
         width="wide"
+        onCloseAutoFocus={(e) => installDialogOpen && e.preventDefault()}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           primaryRef.current?.focus()

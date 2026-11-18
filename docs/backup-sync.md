@@ -301,6 +301,7 @@ reaches argv. Errors carry `code` (class name) and `reason`:
 | `export-failed` | an item could not be exported |
 | `apply-failed` | a remote change could not be applied |
 | `git-missing` | `git` is not on the PATH |
+| `rollback-failed` | first-launch restore could not be fully undone; connection and snapshots are retained for recovery |
 | `busy` | another backup operation holds `~/.agent-store/backup.lock` |
 | `auth-failed` | git: the remote refused the credentials or SSH key (`GitError`) |
 | `host-key` | git: the SSH host key is not trusted yet (`GitError`) |
@@ -311,6 +312,23 @@ reaches argv. Errors carry `code` (class name) and `reason`:
 | `github-failed` | GitHub answered with an error, e.g. creating the repository failed (`BackupGitHubError`) |
 
 The four `GitError` reasons are read from git's and ssh's English messages; any other git failure has no reason.
+
+### First launch on a new computer
+
+Before the welcome/import guide, a client with no welcome record and an empty installed library asks once whether to
+start fresh or restore from an existing backup. The choice is saved in the app data directory's
+`agent-store-cli/first-launch-backup.json` before continuing. Start fresh continues the welcome guide; Escape does the
+same. An existing library, a saved choice or a completed welcome guide suppresses the question. Settings › Backup &
+sync remains available later. An install dialog opened by an app or website link defers this choice; the library is
+checked again when the install dialog closes. The welcome/import guide also pauses during an install, retaining its step.
+
+Restore opens the existing connection form in Settings › Backup & sync. Connecting alone changes no installed items;
+Cancel leaves the library empty. After connecting, “Later” disconnects this first-launch connection. Confirming pull
+uses `pullBackup({ firstRun: true })`: it refuses a nonempty library, never pushes, and undoes attempted installs through
+the engine if applying or verifying the restore fails. Missing keys are expected: those items remain installed but
+disabled until their secrets are entered locally. A rollback failure retains the connection and snapshot for recovery
+and reports the error. Tokens follow the same stdin transport and local credentials file rules as other connections;
+the first-launch choice file contains only a boolean.
 
 ### In the desktop client
 
@@ -328,7 +346,6 @@ since the CLI has no resident process:
 ## Not done
 
 - **Automatic sync from the CLI**; only the desktop client syncs on its own.
-- **First-launch choice** between starting fresh and restoring; the client's backup page has a restore entry instead.
 - **Other hosts' sign-in:** only GitHub (github.com) creates the repository; GitLab, Gitea and others connect by URL.
 - **Disconnecting further:** revoking authorization, deleting the remote.
 - **Registered projects** in the backup.
