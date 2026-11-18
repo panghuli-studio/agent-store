@@ -5,7 +5,7 @@
 # catalog switch (#125), the skill library (#111), the window shell (#163), the Discover page,
 # install dialog and libraries (#164), the welcome, usage and settings pages (#165), projects (#166), the
 # loopback endpoint the web store asks (#181), the relay controls, connection test, provider order and
-# usage breakdown (#192), backup and sync (#112), the desktop sign-in with favorites (#195) and the
+# usage breakdown (#192), backup and sync (#112) with GitHub sign-in (#231), the desktop sign-in with favorites (#195) and the
 # first-run import (#193). Each step is driven by an
 # agent-store:// link, the keyboard, or aas itself, and checked on disk.
 # Writes /out/NN-*.png, /out/result.txt and /out/cli.txt; exits non-zero if a
@@ -475,12 +475,91 @@ palette() { xdotool key ctrl+k; sleep 2; xdotool type --delay 60 "$1"; sleep 2; 
 HOME_B=$(mktemp -d)
 cli_b() { echo "\$ (laptop-b) aas $*" >>"$OUT/cli.txt"; HOME=$HOME_B "$SIDECAR" "$@" >>"$OUT/cli.txt" 2>&1; echo >>"$OUT/cli.txt"; }
 
+# 13a. Backup with GitHub sign-in (#231), in Chinese and English. fake-github.py stands in for
+#      github.com and api.github.com, Git over HTTP included, and only takes its own token. Each
+#      language: the connect dialog (GitHub is the default), the device code, the private
+#      repository created and connected, the backup it then holds found and offered from
+#      从备份恢复…, and a denied sign-in. Then `aas backup connect --github` without a terminal.
+GH_PORT=18790
+GH_ROOT=$(mktemp -d)
+GH_TOKEN=gho_desktopShots0123456789abcdefABCDEF01
+python3 -I /work/test/desktop-linux/fake-github.py "$GH_ROOT" "$GH_PORT" "$GH_TOKEN" >"$OUT/fake-github.log" 2>&1 &
+GH_PID=$!
+sleep 1
+gh_mode() { curl -s "http://127.0.0.1:$GH_PORT/control/$1" >/dev/null; }
+export AS_GITHUB_CLIENT_ID=Iv1.desktop-shots AS_GITHUB_URL=http://127.0.0.1:$GH_PORT AS_GITHUB_API_URL=http://127.0.0.1:$GH_PORT/api
+GH_REPO=$GH_ROOT/me/agent-store-backup.git
+CONN=$HOME/.agent-store/backup/connection.json
+launch_in() { env LANG="$1" LC_ALL="$1" LANGUAGE="$2" "$APP" >>"$OUT/app-github-$3.log" 2>&1 & sleep "$SETTLE"; }
+# From the tab: the panel, then 连接仓库… (or one more Tab: 从备份恢复…). The dialog focuses 用 GitHub 登录.
+open_connect() { backup_page; xdotool key Tab Tab "$@" Return; sleep 2; }
+for lang in zh en; do
+  if [ "$lang" = zh ]; then LOC=(zh_CN.UTF-8 zh_CN:zh); else LOC=(en_US.UTF-8 en_US:en); fi
+  gh_mode reset
+  launch_in "${LOC[@]}" "$lang"
+  open_connect
+  shot "33a-$lang-backup-github-start"
+  xdotool key Return
+  sleep 5
+  shot "33b-$lang-backup-github-code"
+  gh_mode approve
+  sleep 20
+  shot "33c-$lang-backup-github-created"
+  xdotool key Escape
+  sleep 3
+  shot "33d-$lang-backup-github-status"
+  stop_app
+  check "$lang: GitHub sign-in created the private repository and connected it" '[ -d "$GH_REPO" ] && grep -q "agent-store-backup.git" "$CONN" && grep -q "\"login\": \"me\"" "$CONN"'
+  check "$lang: the token is only in credentials.json, 0600; the sign-in file is gone" '[ "$(stat -c %a "$HOME/.agent-store/backup/credentials.json")" = 600 ] && [ ! -e "$HOME/.agent-store/backup/github-signin.json" ] && [ "$(grep -rl "$GH_TOKEN" "$HOME/.agent-store")" = "$HOME/.agent-store/backup/credentials.json" ]'
+  cli backup now
+  check "$lang: the first backup reached the GitHub repository over authenticated HTTP" 'git --git-dir="$GH_REPO" ls-tree -r --name-only main 2>/dev/null | grep -q "^items/skill/$SKILL_SLUG/"'
+  check "$lang: the GitHub repository holds neither the token nor the marker key" '! git --git-dir="$GH_REPO" log --all -p --binary 2>/dev/null | grep -qE "$GH_TOKEN|$MARK"'
+  cli backup disconnect
+  gh_mode wait
+  launch_in "${LOC[@]}" "$lang"
+  open_connect Tab
+  xdotool key Return
+  sleep 4
+  gh_mode approve
+  sleep 15
+  shot "33e-$lang-backup-github-found"
+  # 连接这个备份 has the focus.
+  xdotool key Return
+  sleep 15
+  shot "33f-$lang-backup-github-connected"
+  xdotool key Escape
+  sleep 2
+  stop_app
+  check "$lang: the backup found on the account was connected; no second repository" 'grep -q "agent-store-backup.git" "$CONN" && [ ! -e "$GH_ROOT/me/agent-store-backup-2.git" ]'
+  cli backup disconnect
+  gh_mode deny
+  launch_in "${LOC[@]}" "$lang"
+  open_connect
+  xdotool key Return
+  sleep 8
+  shot "33g-$lang-backup-github-denied"
+  stop_app
+  check "$lang: a denied sign-in left nothing connected and no token" '[ ! -e "$CONN" ] && [ ! -e "$HOME/.agent-store/backup/github-signin.json" ]'
+done
+HOME_C=$(mktemp -d)
+gh_mode auto
+echo "\$ (cli-c) aas backup connect --github --device cli-c" >>"$OUT/cli.txt"
+HOME=$HOME_C timeout 120 "$SIDECAR" backup connect --github --device cli-c </dev/null >>"$OUT/cli.txt" 2>&1
+echo >>"$OUT/cli.txt"
+check "aas backup connect --github without a terminal connected to the backup found on the account" 'grep -q cli-c "$HOME_C/.agent-store/backup/connection.json" && grep -q "Found the backup an earlier device made" "$OUT/cli.txt"'
+check "the GitHub token is in no log, no CLI output and no sidecar command line" '! grep -qs "$GH_TOKEN" "$OUT"/app-*.log "$OUT/cli.txt" "$ARGV_LOG" "$OUT/fake-github.log"'
+kill "$GH_PID" 2>/dev/null
+unset AS_GITHUB_CLIENT_ID AS_GITHUB_URL AS_GITHUB_API_URL
+
 "$APP" >"$OUT/app-backup-1.log" 2>&1 &
 sleep "$SETTLE"
 backup_page
 shot 34-backup-not-connected
-# From the tab: the panel, then 连接仓库…; the dialog focuses the URL field.
+# From the tab: the panel, then 连接仓库…. The dialog focuses 用 GitHub 登录; back past 取消 and
+# the device field to Git 地址, which opens the URL form with its field focused.
 xdotool key Tab Tab Return
+sleep 2
+xdotool key shift+Tab shift+Tab shift+Tab Return
 sleep 2
 xdotool type --delay 30 "$REMOTE"
 xdotool key Tab Tab
