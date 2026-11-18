@@ -643,7 +643,7 @@ describe('what a lookup found', () => {
         truncatedRoutes({ 'docs/kanban': ['README.md'] }),
         searchRoutes({
           clawhub: clawhubOk(),
-          skillsmp: skillsmpOk(hit(`https://github.com/${MONO}/tree/main/docs/kanban`), hit(`https://github.com/${MONO}/tree/main/gone/kanban`, 'obsidian-kanban-2')),
+          skillsmp: skillsmpOk(hit(`https://github.com/${MONO}/tree/main/docs/kanban`), { ...hit(`https://github.com/${MONO}/tree/main/gone/kanban`, 'obsidian-kanban-2'), id: 'mono-repo-gone-kanban-skill-md' }),
         }),
       )
       const logs: Record<string, unknown>[] = []
