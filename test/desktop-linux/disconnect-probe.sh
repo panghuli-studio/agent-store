@@ -90,7 +90,7 @@ probe() {
   grep -Eq "$expect" "$text" && screen=shown
   if [ -n "$SID" ]; then
     python3 -I /work/test/desktop-linux/wd.py probe "$WD_PORT" "$SID" "$OUT/$n" >/dev/null 2>>"$OUT/wd-errors.txt"
-    dom=$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1])); d=o.get("dom") or {}; r=o.get("raf") or {}; print("step=%s input=%r active=%r frames=%s/%sms dom_has_expected=%s errors=%d" % (d.get("step"), d.get("input"), d.get("active"), r.get("frames"), r.get("ms"), sys.argv[2] in (d.get("dialog") or ""), len(d.get("probe") or [])) if d else o)' "$OUT/$n-dom.json" "$3" 2>&1)
+    dom=$(python3 -c 'import json,sys; o=json.load(open(sys.argv[1])); d=o.get("dom") or {}; r=o.get("raf") or {}; print("step=%s input=%r active=%r frames=%s/%sms dom_has_expected=%s events=%d" % (d.get("step"), d.get("input"), d.get("active"), r.get("frames"), r.get("ms"), sys.argv[2] in (d.get("dialog") or ""), len(d.get("probe") or [])) if d else o)' "$OUT/$n-dom.json" "$3" 2>&1)
   fi
   log "$n: screen ${screen} ($expect) | dom: $dom | webkit: $(awk '/WebKitWebProcess/ {printf "%s %s cpu=%s; ", $1, $3, $5}' "$OUT/$n.ps.txt")"
 }

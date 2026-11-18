@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Native screenshots have a fixed 1200x760 window at (0, 0). Both result dialogs'
-# titles fall in this band. Whole-screen mixed-language OCR misses the small heading
-# even when it is readable; isolate and enlarge the pixels, keeping the exact assertion.
+# The delete result has a fixed layout in the harness's 1200x760 native window.
+# Read only its heading, excluding background/body text and the status bar. Use a
+# single-line recognizer: full-window/mixed-language OCR drops this small title.
 set -euo pipefail
 lang=eng
-[ "$2" = zh ] && lang=chi_sim
-convert "$1" -crop 480x75+360+160 +repage -resize 300% png:- |
-  tesseract stdin stdout -l "$lang" --psm 6 2>/dev/null | tr -d '[:space:]'
+crop=260x28+374+170
+if [ "$2" = zh ]; then
+  lang=chi_sim
+  crop=126x24+374+199
+fi
+convert "$1" -crop "$crop" +repage -resize 400% png:- |
+  tesseract stdin stdout -l "$lang" --psm 7 2>/dev/null | tr -d '[:space:]'

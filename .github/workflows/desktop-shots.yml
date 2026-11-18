@@ -21,17 +21,66 @@ on:
       - '.github/workflows/desktop-shots.yml'
   workflow_dispatch:
     inputs:
+      ocr_run_id:
+        description: Only verify result-title OCR against this run's disconnect-probe artifact (empty runs native checks)
+        type: string
+        default: ''
       probe_only:
         description: Run only the disconnect repaint measurements
         type: boolean
         default: false
 
 concurrency:
-  group: desktop-shots-${{ github.ref }}-${{ inputs.probe_only && 'probe' || 'screenshots' }}
+  group: desktop-shots-${{ github.ref }}-${{ inputs.ocr_run_id && 'ocr' || inputs.probe_only && 'probe' || 'screenshots' }}
   cancel-in-progress: true
 
 jobs:
+  ocr:
+    if: ${{ inputs.ocr_run_id }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the same OCR tools as the native container
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick tesseract-ocr tesseract-ocr-chi-sim
+      - uses: actions/download-artifact@v4
+        with:
+          name: disconnect-probe
+          path: out/probe
+          run-id: ${{ inputs.ocr_run_id }}
+          github-token: ${{ github.token }}
+      - name: Real completion pixels pass; stale and blank pixels fail
+        shell: bash
+        run: |
+          set -euo pipefail
+          for lang in zh en; do
+            expected=Disconnected
+            variants=(plain-en wd-en)
+            if [ "$lang" = zh ]; then
+              expected=已断开
+              variants=(plain-zh-im-simple wd-zh-im-simple)
+            fi
+            for variant in "${variants[@]}"; do
+              for step in 5-done-15s 6-done-45s; do
+                text=$(bash test/desktop-linux/disconnect-title.sh "out/probe/$variant-$step.png" "$lang")
+                echo "$variant-$step: $text"
+                [[ "$text" == "$expected" ]]
+              done
+            done
+            for step in 3-code-5s 5-done-15s; do
+              text=$(bash test/desktop-linux/disconnect-title.sh "out/probe/plain-zh-$step.png" "$lang")
+              echo "stale-$lang-$step: $text"
+              [[ "$text" != *"$expected"* ]]
+            done
+            convert -size 1280x800 xc:black out/blank.png
+            text=$(bash test/desktop-linux/disconnect-title.sh out/blank.png "$lang")
+            [[ "$text" != *"$expected"* ]]
+          done
   shots:
+    if: ${{ !inputs.ocr_run_id }}
     runs-on: ubuntu-latest
     # A compiler upgrade invalidates build layers before the full native acceptance.
     timeout-minutes: 75
