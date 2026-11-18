@@ -570,7 +570,12 @@ disconnect_shot() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     shot "$name"
     tesseract "$OUT/$name.png" stdout -l eng+chi_sim 2>/dev/null | tr -d '[:space:]' >"$OUT/$name.txt"
-    if grep -Eq "$expected" "$OUT/$name.txt"; then return 0; fi
+    local text="$OUT/$name.txt"
+    if [ -n "${3:-}" ]; then
+      text="$OUT/$name-title.txt"
+      bash /work/test/desktop-linux/disconnect-title.sh "$OUT/$name.png" "$3" >"$text"
+    fi
+    if grep -Eq "$expected" "$text"; then return 0; fi
     sleep 1
   done
   log "FAIL: $name never displayed $expected"
@@ -612,7 +617,7 @@ for lang in zh en; do
   check "$lang: still nothing deleted while the deletion sign-in waits" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
   gh_mode approve
   if [ "$lang" = zh ]; then DONE_TEXT='已断开'; else DONE_TEXT='Disconnected'; fi
-  disconnect_shot "33l-$lang-backup-disconnect-deleted" "$DONE_TEXT"
+  disconnect_shot "33l-$lang-backup-disconnect-deleted" "$DONE_TEXT" "$lang"
   xdotool key Escape
   sleep 2
   stop_app
