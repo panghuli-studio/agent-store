@@ -34,6 +34,13 @@ if (!window.__probe) {
   for (const k of ['error', 'warn']) { const f = console[k].bind(console); console[k] = (...a) => { keep(k, a); f(...a); }; }
   addEventListener('error', (e) => keep('error-event', [e.message, e.filename, e.lineno]));
   addEventListener('unhandledrejection', (e) => keep('rejection', [e.reason && (e.reason.stack || e.reason)]));
+  for (const kind of ['compositionstart', 'compositionend', 'input', 'keydown', 'focusin']) {
+    addEventListener(kind, (e) => {
+      if (!e.target.closest?.('[role=dialog]')) return;
+      keep('input-event', [JSON.stringify({ type: e.type, target: e.target.tagName,
+        id: e.target.id, key: e.key, isComposing: e.isComposing, isTrusted: e.isTrusted })]);
+    }, true);
+  }
 }
 return true;
 '''
@@ -47,12 +54,26 @@ return {
   at: Date.now(),
   visibility: document.visibilityState,
   step: box ? box.getAttribute('data-step') : null,
-  dialog: d ? d.innerText.replace(/\s+/g, ' ').slice(0, 600) : null,
+  dialog: d ? d.innerText.replace(/\s+/g, ' ').slice(0, 4000) : null,
   input: q('#backup-disconnect-confirm') ? q('#backup-disconnect-confirm').value : null,
   buttons: d ? Array.from(d.querySelectorAll('button')).map((b) => ({ text: b.innerText.trim().slice(0, 40), disabled: b.disabled })) : [],
   active: el ? el.tagName + (el.id ? '#' + el.id : '') + ' ' + (el.innerText || el.value || '').trim().slice(0, 40) : null,
   statusbar: (document.body.innerText.split('\n').filter(Boolean).slice(-3)).join(' | '),
   lang: navigator.language,
+  documentLang: document.documentElement.lang,
+  focused: document.hasFocus(),
+  timeline: document.timeline.currentTime,
+  animations: document.getAnimations().map(a => ({
+    currentTime: a.currentTime, startTime: a.startTime, playState: a.playState, pending: a.pending,
+  })),
+  fonts: { status: document.fonts.status, faces: Array.from(document.fonts).map(f => ({ family: f.family, status: f.status })) },
+  nodes: Array.from(document.querySelectorAll('[role=dialog], [data-testid=backup-disconnect], [data-testid=backup-user-code]')).map(n => {
+    const c = getComputedStyle(n);
+    return { tag: n.tagName, step: n.getAttribute('data-step'), rect: n.getBoundingClientRect().toJSON(),
+      scrollHeight: n.scrollHeight, clientHeight: n.clientHeight,
+      style: { display: c.display, visibility: c.visibility, opacity: c.opacity, transform: c.transform,
+        overflow: c.overflow, font: c.font, animation: c.animation, filter: c.filter, backdropFilter: c.backdropFilter } };
+  }),
   probe: window.__probe || null,
 };
 '''

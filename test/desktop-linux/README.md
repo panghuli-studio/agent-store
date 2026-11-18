@@ -65,3 +65,15 @@ After a change to the client's screens, regenerate them:
    Without `cwebp`, Pillow does the same: `Image.open(f).save(dst, 'WEBP', quality=85, method=6)`.
 4. If a page size changed, update `SHOTS` in `Window.tsx`. If a shot no longer shows what the alt text or caption next to it says, update `site.home.demo`, `site.home.manage` and `site.client` in `apps/store/messages/zh.json` and `en.json`.
 5. The PR's `store-screenshots` artifact has `landing-*` and `client-*` at 390, 820 and 1440px in both languages; check the new shots there.
+
+## 断开流程重绘诊断（#237）
+
+`disconnect-probe.sh` 的 WebDriver 读数还记录实际页面语言、页面可见性、焦点、动画时钟、字体加载状态，以及对话框/设备码节点的尺寸和计算样式；`wd.py hook` 记录对话框内的输入、输入法组合与焦点事件。事件不记录输入值或 RPC 参数。
+
+对照同一步的 `*-dom.json`、`*-wd.png` 与 Xvfb `*.png`：
+
+- DOM 未进入 `waiting` / `done`：先追踪事件、异常和 RPC 完成情况。
+- DOM 已更新，而 `visibility=hidden`、动画 `pending=true`、`currentTime=0`、对话框 `opacity=0`：先验证页面可见性与帧调度，不要直接判断为 React 状态错误。
+- DOM 与动画正常，WebKit 快照正确而 Xvfb 像素陈旧：继续测原生窗口/合成链路。
+
+快照可能促使渲染，属于有干扰的测量；保留原脚本不附加 WebDriver 的对照轮次。以上是诊断分流规则，不是已确定的 Linux 根因，也不以关闭动画作为修复。
