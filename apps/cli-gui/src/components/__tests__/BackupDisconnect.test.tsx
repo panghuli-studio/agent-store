@@ -140,6 +140,8 @@ test('delete: type the name, sign in for delete_repo, then delete; the result sa
   expect(calls.find((c) => c.method === 'disconnectBackup')?.args).toEqual([{ level: 'delete', confirm: REPO }])
   expect(openMock).toHaveBeenCalledWith('https://github.com/login/device')
   expect(within(dialog).getByText(`在 GitHub 上删除了 ${REPO}`)).toBeInTheDocument()
+  expect(screen.getByTestId('log').textContent).toContain('✓ 已断开')
+  expect(screen.getByTestId('log').textContent).not.toContain('远端仓库保持原样')
   expect(within(dialog).getByText(/请在每台设备上选「只断开本机」/)).toBeInTheDocument()
   expect(calls.some((c) => c.method === 'cancelGitHubBackupSignIn')).toBe(false)
 })

@@ -96,7 +96,7 @@ export function DisconnectBody({ onClose }: { onClose: () => void }) {
       const result = await backup.disconnect(level === 'device' ? undefined : { level, ...(level === 'delete' ? { confirm: typed.trim() } : {}) })
       approved.current = false
       if (run.current !== id) return
-      appendLine(`✓ ${t('bk.disconnected')}`, 'green')
+      appendLine(`✓ ${t('bk.discDoneT')}`, 'green')
       toast(t('bk.discDoneT'))
       setFlow({ step: 'done', result })
     } catch (err) {

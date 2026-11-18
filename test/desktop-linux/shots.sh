@@ -559,6 +559,20 @@ check "aas backup disconnect --revoke revoked the token, removed the local folde
 #      --revoke for the CLI device, which leaves the repository. The checks confirm the repository
 #      is gone only after the deletion sign-in, both of this device's tokens were revoked and the
 #      local backup folder was removed.
+# A disk assertion can pass even when the screenshot captured an older frame (or a blank
+# WebKit repaint). Observe the native pixels before accepting the code/result screenshots.
+disconnect_shot() {
+  local name=$1 expected=$2 deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    shot "$name"
+    tesseract "$OUT/$name.png" stdout -l eng+chi_sim 2>/dev/null | tr -d '[:space:]' >"$OUT/$name.txt"
+    if grep -Eq "$expected" "$OUT/$name.txt"; then return 0; fi
+    sleep 1
+  done
+  log "FAIL: $name never displayed $expected"
+  failed=1
+  return 1
+}
 for lang in zh en; do
   if [ "$lang" = zh ]; then LOC=(zh_CN.UTF-8 zh_CN:zh); else LOC=(en_US.UTF-8 en_US:en); fi
   gh_mode auto
@@ -581,17 +595,20 @@ for lang in zh en; do
   sleep 1
   xdotool key Tab
   xdotool type --delay 40 "$GH_DISC_REPO"
-  sleep 1
-  shot "33j-$lang-backup-disconnect-delete"
+  # Copy the input selection back: a Tab sent before the radio's render completed must
+  # not silently turn this into a picture of an empty, disabled confirmation field.
+  xdotool key ctrl+a ctrl+c
+  TYPED_REPO=$(timeout 2 xclip -selection clipboard -o 2>/dev/null || true)
+  check "$lang: the focused confirmation input contains the repository name" '[ "$TYPED_REPO" = "$GH_DISC_REPO" ]'
+  disconnect_shot "33j-$lang-backup-disconnect-delete" 'me/agent-store-backup'
   check "$lang: nothing is deleted before the deletion sign-in" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
   # The typed name, then 取消, then 登录 GitHub 并删除.
   xdotool key Tab Tab Return
-  sleep 5
-  shot "33k-$lang-backup-disconnect-code"
+  disconnect_shot "33k-$lang-backup-disconnect-code" 'HQLC.RT4P'
   check "$lang: still nothing deleted while the deletion sign-in waits" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
   gh_mode approve
-  sleep 15
-  shot "33l-$lang-backup-disconnect-deleted"
+  if [ "$lang" = zh ]; then DONE_TEXT='已断开'; else DONE_TEXT='Disconnected'; fi
+  disconnect_shot "33l-$lang-backup-disconnect-deleted" "$DONE_TEXT"
   xdotool key Escape
   sleep 2
   stop_app
