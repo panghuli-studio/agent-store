@@ -147,10 +147,10 @@ function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'resto
                   <dt className="font-semibold text-fg">{t('bk.pullChoice')}</dt>
                   <dd className="text-fg-2">{t('bk.pullChoiceD')}</dd>
                 </div>
-                <div>
+                {!firstRun && <div>
                   <dt className="font-semibold text-fg">{t('bk.mergeChoice')}</dt>
                   <dd className="text-fg-2">{t('bk.mergeChoiceD')}</dd>
-                </div>
+                </div>}
               </dl>
             </>
           )}

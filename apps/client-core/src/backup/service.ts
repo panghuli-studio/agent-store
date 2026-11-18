@@ -1,6 +1,6 @@
 // Backup to a Git repository the user owns, and sync between devices (issue #112).
 // docs/backup-sync.md describes the behavior; the merge itself is merge.ts.
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { hostname, tmpdir } from 'os'
 import { join } from 'path'
 import lockfile from 'proper-lockfile'
@@ -10,7 +10,7 @@ import type {
   BackupSnapshot, BackupStatus, BackupSyncResult, Engine, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll, Paths,
 } from '@as/types'
 import type { Catalog } from '../catalog'
-import { assertSafeSlug } from '../paths'
+import { assertSafeSlug, itemDir } from '../paths'
 import { findEntry, readRegistry } from '../registry/index'
 import { applyItem, installCopy, type ApplyContext, type ApplyOutcome } from './apply'
 import { DEFAULT_MAX_ITEM_BYTES, exportLocal, type ExportResult, type WantedTarget } from './export'
@@ -371,6 +371,21 @@ export class BackupService {
           const retry = localIsBase.has(d.key) && !same(l, r)
           return content || state || retry ? [{ key: d.key, parts: { content: content || (retry && !d.keepLocalContent), state: state || retry } }] : []
         })
+        const freshDirs: string[] = []
+        if (firstRun) {
+          for (const t of toApply) {
+            const { category, slug } = parseKey(t.key)
+            const dir = itemDir(this.aasHome, category, slug)
+            try {
+              await lstat(dir)
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+              freshDirs.push(dir)
+              continue
+            }
+            throw new Error('First-launch restore found an existing item directory; use Backup & sync after moving or importing it')
+          }
+        }
         try {
           const { applied, outcomes, errors } = await this.applyAll(targetDir, toApply)
           const appliedKeys = new Set(toApply.map(t => t.key))
@@ -428,6 +443,9 @@ export class BackupService {
             if (rollback.errors.size) {
               throw new Error('First-launch restore failed and could not be completely undone; keep the backup connection and inspect the library before retrying')
             }
+            // An install hook can fail before registering its item. These paths
+            // were absent before the attempt, so no preexisting data is removed.
+            for (const dir of freshDirs) await rm(dir, { recursive: true, force: true })
             await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
           }
           throw error

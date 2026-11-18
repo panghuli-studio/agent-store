@@ -435,3 +435,30 @@ test('first-launch pull rolls back other installs and agent config after an enab
   const claude = existsSync(join(b.claudeDir, 'settings.json')) ? await readFile(join(b.claudeDir, 'settings.json'), 'utf-8') : ''
   expect(claude).not.toContain('plain-server')
 })
+
+test('first-launch pull cleans files from a hook that failed before registration', async () => {
+  serveFetch()
+  const a = await device('hook-source')
+  await a.engine.install('plain-mcp')
+  const manifestPath = join(a.aasHome, 'mcps', 'plain-mcp', 'manifest.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'))
+  manifest.installHook.steps = [
+    { type: 'config', patch: { region: 'eu' } },
+    { type: 'file', url: 'https://example.test/fail', dest: 'download' },
+  ]
+  await writeFile(manifestPath, JSON.stringify(manifest))
+  const remote = await bareRemote()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  globalThis.fetch = (async () => new Response('unavailable', { status: 503 })) as typeof fetch
+  const b = await device('hook-failure')
+  await b.engine.connectBackup({ remote })
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('could not be fully restored')
+  expect(await b.engine.list()).toEqual([])
+  expect(existsSync(join(b.aasHome, 'mcps', 'plain-mcp'))).toBe(false)
+
+  await mkdir(join(b.aasHome, 'mcps', 'plain-mcp'))
+  await writeFile(join(b.aasHome, 'mcps', 'plain-mcp', 'keep'), 'user data')
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('existing item directory')
+  expect(await readFile(join(b.aasHome, 'mcps', 'plain-mcp', 'keep'), 'utf-8')).toBe('user data')
+})
