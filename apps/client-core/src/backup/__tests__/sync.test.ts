@@ -399,3 +399,39 @@ test('an operation that finds the backup lock held says so with reason busy', as
     await release()
   }
 }, 60_000)
+
+test('first-launch pull restores an empty library and keeps missing keys local', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const b = await device('first-launch')
+  await b.engine.connectBackup({ remote })
+  const result = await b.engine.pullBackup({ firstRun: true })
+  expect(result.failed).toEqual([])
+  expect(result.missingSecrets.length).toBeGreaterThan(0)
+  expect((await b.engine.list()).length).toBe(4)
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('empty library')
+})
+
+test('first-launch pull rolls back other installs and agent config after an enable failure', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const head = await runGit(remote, ['rev-parse', 'main'])
+  const b = await device('first-launch-failure')
+  await b.engine.connectBackup({ remote })
+  const enable = b.engine.enable.bind(b.engine)
+  b.engine.enable = async (slug, target, options) => {
+    if (slug === 'plain-mcp' && target === 'codex') throw new Error('simulated enable failure')
+    return enable(slug, target, options)
+  }
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('could not be fully restored')
+  expect(await b.engine.list()).toEqual([])
+  expect(existsSync(skillPath(b))).toBe(false)
+  expect((await b.engine.getBackupStatus()).lastSync).toBeUndefined()
+  expect(await runGit(remote, ['rev-parse', 'main'])).toBe(head)
+  const claude = existsSync(join(b.claudeDir, 'settings.json')) ? await readFile(join(b.claudeDir, 'settings.json'), 'utf-8') : ''
+  expect(claude).not.toContain('plain-server')
+})

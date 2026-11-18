@@ -503,7 +503,7 @@ export interface Engine {
   /** Snapshot, then merge both ways per item, push, and apply what came from the remote. */
   backupNow(): Promise<BackupSyncResult>
   /** Applies remote changes here without uploading local ones. */
-  pullBackup(): Promise<BackupSyncResult>
+  pullBackup(options?: { firstRun?: boolean }): Promise<BackupSyncResult>
   /** `item`: slug or `<category>/<slug>`. Takes a snapshot first. */
   resolveBackupConflict(item: string, choice: BackupConflictChoice): Promise<BackupResolveResult>
   listBackupSnapshots(): Promise<BackupSnapshot[]>

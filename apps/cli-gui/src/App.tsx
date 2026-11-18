@@ -21,6 +21,7 @@ import { InstallDialog } from './components/install/InstallDialog'
 import { ProjectsPage } from './components/projects/ProjectsPage'
 import { ProjectPage } from './components/projects/ProjectPage'
 import { ProjectDialogs } from './components/projects/ProjectDialogs'
+import { FirstLaunchBackup } from './components/backup/FirstLaunchBackup'
 import { BackupDialogs } from './components/backup/BackupDialogs'
 import { useFirstRunWelcome } from './components/WelcomeDialog'
 import { Toaster } from './components/ui/toast'
@@ -58,6 +59,7 @@ function AppShell() {
       <SignInDialog />
       <InstallDialog />
       <ProjectDialogs />
+      <FirstLaunchBackup />
       <BackupDialogs />
       <Toaster />
     </div>

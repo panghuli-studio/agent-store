@@ -60,6 +60,11 @@ jobs:
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/shots.sh
+      - name: First-launch restore (Chinese and English)
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p out/first-launch
+          docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -v "$PWD/out/first-launch:/out/first-launch" --entrypoint bash as-desktop-linux /work/test/desktop-linux/first-launch.sh
       - name: Marketing screenshots
         if: ${{ !cancelled() }}
         run: |
