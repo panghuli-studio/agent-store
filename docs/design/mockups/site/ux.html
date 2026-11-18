@@ -56,7 +56,7 @@
     <div class="layer" data-kind="provider"><h2>账户与付费<small>登录、订阅、收藏</small></h2><div class="nodes" data-spot-group>
       <a class="node-c spot" href="pricing.html"><h3>定价<code>pricing.html</code></h3><p>Free 与 Pro，按月 / 按年 / 终身买断切换，逐项对比。</p><span class="to">去往<span class="chip">登录</span><span class="chip">结账</span></span></a>
       <a class="node-c spot" href="checkout.html?set=in,free#period=monthly&trial=1"><h3>结账<code>checkout.html</code></h3><p>订单、试用说明、模拟支付。真实站点在这一步跳到 Waffo 的支付页。</p><span class="to">去往<span class="chip">个人面板</span></span></a>
-      <a class="node-c spot" href="dashboard.html?set=in"><h3>个人面板<code>dashboard.html</code></h3><p>账户、订阅（含取消与恢复）、收藏；「设备同步」标为即将推出，没有内容。</p><span class="to">去往<span class="chip">定价</span><span class="chip">商店</span></span></a>
+      <a class="node-c spot" href="dashboard.html?set=in"><h3>个人面板<code>dashboard.html</code></h3><p>账户、订阅（含取消与恢复）、收藏。备份与同步在客户端设置中提供，网站没有设备同步标签。</p><span class="to">去往<span class="chip">定价</span><span class="chip">商店</span></span></a>
     </div></div>
 
     <div class="layer"><h2 style="color:var(--fg2)">全局组件与系统页<small>任何页面都可能出现</small></h2><div class="nodes">
@@ -80,7 +80,7 @@
 
     <div class="flowc" data-kind="skill"><h3><small>02</small>已装客户端，安装一个包</h3><div class="chain">
       <a href="detail.html?set=client#id=github%3Amattpocock%2Fskills%2Ftdd"><b>详情</b></a><a href="detail.html?set=client#id=github%3Amattpocock%2Fskills%2Ftdd&open=install"><b>安装窗口</b><small>包名与类别、发布者、装到哪个 agent、要填的值</small></a><span><b>进度</b><small>逐步打勾</small></span><span><b>已安装</b><small>列表和详情显示「已安装」</small></span>
-    </div><p class="fine" style="margin-top:12px">网页无法确认本机装了什么，这里的「已安装」是原型模拟的状态。安装窗口只列 agent 复选框和要填的值，不展示会执行的内容。</p></div>
+    </div><p class="fine" style="margin-top:12px">网页无法确认本机装了什么，这里的「已安装」是原型模拟的状态。本页的简化模拟只列 agent 复选框和要填的值；真实安装由客户端确认，对话框会展示安装步骤。详见客户端原型的 INVENTORY.md；不能把此模拟当作真实对话框的功能边界。</p></div>
 
     <div class="flowc" data-kind="mcp"><h3><small>03</small>全局搜索</h3><div class="chain">
       <a href="index.html?open=palette"><b>按 / 或 ⌘K</b><small>或点导航里的搜索</small></a><span><b>输入前</b><small>最近查看、建议、页面</small></span><span><b>输入</b><small>按类别分组，↑↓ 选择</small></span><span class="branch"><b>没有结果</b><small>正在其他来源查找… → 没有找到</small></span><span><b>回车</b><small>进详情；Esc 关闭，焦点还回去</small></span>

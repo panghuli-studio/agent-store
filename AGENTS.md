@@ -23,19 +23,19 @@ The web store (`apps/store`) and the desktop client follow different design sour
 **Web store.** Since 2026-11-11 (issue #58) the web store has its own visual system.
 Before implementing or reviewing any web store screen, read `apps/store/DESIGN.md`
 (tokens, layout, components, do's and don'ts) and `apps/store/PRODUCT.md` (product
-facts). Since #158 the site is being redone in direction C; the interaction and copy
-reference is the prototype in `docs/design/mockups/site/` on branch
-`design/redesign-prototype`. The old direction contract for the store list and detail
+facts). The site uses direction C from #158; the interaction and copy
+reference is the prototype in `docs/design/mockups/site/` on `main` (merged in #167).
+The former `design/redesign-prototype` branch has been deleted. The old direction contract for the store list and detail
 drawer is in `apps/store/.impeccable/surfaces/`; its visual part no longer applies.
 Tokens live in `apps/store/app/globals.css`; change them there and in `DESIGN.md`
 together. `docs/ui/Agent Store.dc.html` is only a record of
 the old look for the web store and no longer constrains it. Since #66 every web store
 page uses the new system; do not restyle any of them back toward the old mockup.
 
-**Desktop client.** Since #163 (2026-11-13) the desktop client is being rebuilt on the
+**Desktop client.** Since #163 (2026-11-13) the desktop client has been rebuilt on the
 redesign's direction C. Read `apps/cli-gui/DESIGN.md` (tokens, window shell, components,
 do's and don'ts) before implementing or reviewing any desktop screen. The interaction and
-copy source is the approved prototype on the `design/redesign-prototype` branch,
+copy source is the approved prototype merged into `main` in #167,
 `docs/design/mockups/client-app/` (`app.css`, `app.js`, `i18n.js`, `ux.html`,
 `INVENTORY.md`); read its source, not a memory of it. Tokens live in
 `apps/cli-gui/src/globals.css`; change them there and in `DESIGN.md` together. Every screen has been

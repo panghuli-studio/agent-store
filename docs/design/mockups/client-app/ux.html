@@ -52,6 +52,7 @@ ol.q b{color:var(--fg)}
 </style>
 </head>
 <body>
+<p>2026-11-18：本页其余提案与待定项是历史设计记录；C 光谱改版与项目功能已落地，当前行为以 main 源码为准。备份与同步参见 <a href="../../../backup-sync.md">功能说明</a>。</p>
 <main>
 <h1>桌面客户端原型 · 交互说明</h1>
 <p>这份说明对应同目录下的可点击原型。功能来自对现有代码的盘点（见 <a href="INVENTORY.md">INVENTORY.md</a>），视觉沿用网站原型的方向。每个界面和状态都有独立地址，下文的链接直接打开对应状态。</p>
@@ -186,7 +187,7 @@ ol.q b{color:var(--fg)}
 <tr><td>项目列表</td><td><a href="index.html?lang=zh#/projects">列表</a>，目录不存在 / 缺少密钥标记</td><td><a href="index.html?lang=zh#/projects?state=loading">骨架</a></td><td><a href="index.html?lang=zh#/projects?state=empty">还没有项目</a></td><td>—</td></tr>
 <tr><td>项目页</td><td><a href="index.html?lang=zh#/project/agent-store">技能与 MCP 两个区块</a></td><td><a href="index.html?lang=zh#/project/agent-store?state=loading">骨架</a></td><td><a href="index.html?lang=zh#/project/blog">没有项目级内容</a>；单个区块为空时区块内提示</td><td><a href="index.html?lang=zh#/project/agent-store?state=error">读取失败</a>；<a href="index.html?lang=zh#/project/old-site">目录不存在</a>；缺少密钥；Codex 尚未信任；<a href="index.html?lang=zh#/project/none">没有这个项目</a></td></tr>
 <tr><td>安装对话框</td><td>选 agent → 必填项 → 进度 → 完成</td><td>网页链接到达时「正在从目录获取」</td><td>没有可用 agent 时按钮变为「只安装，不启用」</td><td>同名条目冲突；目录取不到；六种链接提示</td></tr>
-<tr><td>设置</td><td>六个分页</td><td>检查更新时「正在检查…」</td><td>—</td><td>离线时检查更新失败；跨设备同步为禁用的「即将推出」</td></tr>
+<tr><td>设置</td><td>六个分页</td><td>检查更新时「正在检查…」</td><td>—</td><td>离线时检查更新失败；备份与同步已在 main 实现，原型仅给说明和文档链接，未模拟完整流程</td></tr>
 </tbody></table></div>
 
 <h2>四、键盘</h2>

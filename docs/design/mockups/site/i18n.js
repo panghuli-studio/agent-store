@@ -364,7 +364,7 @@
     'db.fav.view': ['查看', 'View'], 'db.fav.remove': ['移除', 'Remove'],
     'db.fav.empty.h': ['还没有收藏', 'No favorites yet'], 'db.fav.empty.p': ['在商店里点心形按钮。', 'Tap the heart on any package in the store.'],
     'db.fav.removed': ['已从收藏移除', 'Removed from favorites'],
-    'db.sync.p': ['在一台设备上装好，其他设备跟着装好。还在开发。', 'Install on one machine and have it on the others. In development.'],
+    'db.sync.p': ['备份与同步已在客户端设置中提供，使用自己的 Git 仓库；网站不管理同步。', 'Backup and sync is available in client settings using your own Git repository; it is not managed on the website.'],
 
     /* ---------- 下载 ---------- */
     'title.download': ['下载 · Agent Store', 'Download · Agent Store'],

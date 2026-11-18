@@ -555,7 +555,7 @@
         setRow(t('set.lang'), t('set.lang.d'), '<div class="seg" role="group" aria-label="' + t('set.lang') + '"><button type="button" data-act="lang" data-arg="zh" aria-pressed="' + (S.lang === 'zh') + '">简体中文</button><button type="button" data-act="lang" data-arg="en" aria-pressed="' + (S.lang === 'en') + '">English</button></div>') +
         setRow(t('set.theme'), t('set.theme.d'), '<span class="chip">' + t('set.theme.dark') + '</span>') +
         setRow(t('set.keys'), t('set.keys.d'), '<button type="button" class="btn btn-sm" data-act="dlg" data-arg="shortcuts">' + ic('kbd') + t('set.keys.btn') + '</button>') +
-        setRow(t('set.sync') + ' <span class="chip dash">' + t('soon') + '</span>', t('set.sync.d'), '<button type="button" class="sw" role="switch" aria-checked="false" disabled aria-label="' + t('set.sync') + '"></button>', 'off') + '</div>' +
+        setRow(t('set.sync'), t('set.sync.d'), '<a class="btn btn-sm" href="../../../backup-sync.md">' + t('about.docs') + '</a>') + '</div>' +
         '<div class="set">' + setRow(t('set.welcome'), t('set.welcome.d'), '<button type="button" class="btn btn-sm" data-act="rewelcome">' + t('set.welcome.btn') + '</button>') + '</div>';
     } else if (tab === 'agents') {
       body = '<p class="h4">' + t('set.agents.h') + '</p><div class="set">' + A.AGENTS.map(function (a) {
