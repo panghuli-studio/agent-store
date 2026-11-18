@@ -8,6 +8,7 @@ import type {
   BackupAppliedChange, BackupConflict, BackupConflictChoice, BackupConnectOptions, BackupConnectResult,
   BackupFailure, BackupHistoryEntry, BackupItemRef, BackupMissingSecret, BackupResolveResult, BackupRestoreResult,
   BackupSnapshot, BackupStatus, BackupSyncResult, Engine, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll, Paths,
+  BackupDisconnectOptions, BackupDisconnectResult, GitHubDeleteSignInPoll,
 } from '@as/types'
 import type { Catalog } from '../catalog'
 import { assertSafeSlug, itemDir } from '../paths'
@@ -21,8 +22,9 @@ import { decide, type Decision } from './merge'
 import { BackupRepo, type Author, type ItemIds } from './repo'
 import { BackupSecretError, scanTree, type SecretFinding } from './secrets'
 import {
-  backupDir, deleteGitHubSignIn, gitDirOf, lockPath, lockTarget, readConnection, readCredentials, readGitHubSignIn, readState,
-  writeConnection, writeCredentials, writeGitHubSignIn, writeState, type BlockedTarget, type Connection, type SyncState,
+  backupDir, deleteGitHubDeleteSignIn, deleteGitHubSignIn, gitDirOf, lockPath, lockTarget, readConnection, readCredentials,
+  readGitHubDeleteSignIn, readGitHubSignIn, readState, writeConnection, writeCredentials, writeGitHubDeleteSignIn, writeGitHubSignIn,
+  writeState, type BlockedTarget, type Connection, type SyncState,
 } from './state'
 
 const SNAPSHOT_PREFIX = 'refs/agent-store/snapshots/'
@@ -74,6 +76,17 @@ export class BackupNotFoundError extends Error {
   constructor(message: string, readonly reason: 'no-conflict' | 'no-snapshot' | 'ambiguous') {
     super(message)
     this.name = 'BackupNotFoundError'
+  }
+}
+
+/**
+ * disconnectBackup refused before doing anything (`not-github`, `confirm-mismatch`), or a GitHub step
+ * failed (`delete-failed`, `revoke-failed`). In every case nothing on this device was removed.
+ */
+export class BackupDisconnectError extends Error {
+  constructor(message: string, readonly reason: 'not-github' | 'confirm-mismatch' | 'delete-failed' | 'revoke-failed') {
+    super(message)
+    this.name = 'BackupDisconnectError'
   }
 }
 
@@ -495,7 +508,7 @@ export class BackupService {
 
   /** Starts over in ~/.agent-store/backup/ and connects it to `remote`; on failure nothing is left there. */
   private async attach(
-    remote: string, credentials: GitCredentials | undefined, options: { branch?: string; device?: string; github?: { login: string } },
+    remote: string, credentials: GitCredentials | undefined, options: { branch?: string; device?: string; github?: { login: string; repo: string } },
   ): Promise<BackupConnectResult> {
     const defaultBranch = await BackupRepo.remoteDefaultBranch(remote, credentials)
     const branch = options.branch?.trim() || defaultBranch || 'main'
@@ -560,7 +573,7 @@ export class BackupService {
       }
       const credentials: GitCredentials = { username: signIn.login, password: signIn.token }
       try {
-        return await this.attach(this.github.remoteOf(fullName), credentials, { device: options.device, github: { login: signIn.login } })
+        return await this.attach(this.github.remoteOf(fullName), credentials, { device: options.device, github: { login: signIn.login, repo: fullName } })
       } catch (e) {
         // The sign-in stays usable for another try without approving again.
         await writeGitHubSignIn(this.aasHome, signIn)
@@ -571,8 +584,59 @@ export class BackupService {
 
   async cancelGitHubSignIn(): Promise<void> {
     await this.locked(async () => {
-      if (!(await readConnection(this.aasHome))) await deleteGitHubSignIn(this.aasHome)
+      if (!(await readConnection(this.aasHome))) return deleteGitHubSignIn(this.aasHome)
+      const pending = await readGitHubDeleteSignIn(this.aasHome)
+      if (!pending) return
+      await deleteGitHubDeleteSignIn(this.aasHome)
+      // A token that may delete repositories is not left valid on GitHub once nobody holds it.
+      await this.github.revoke([pending.token]).catch(() => undefined)
     })
+  }
+
+  private githubRepo(conn: Connection): { repo?: string } {
+    const repo = conn.github?.repo ?? this.github.repoOf(conn.remote)
+    return repo ? { repo } : {}
+  }
+
+  /** The GitHub side of the connection; revoking and deleting are refused without it. */
+  private githubOf(conn: Connection, what: string): { login: string; repo: string } {
+    const repo = conn.github ? conn.github.repo ?? this.github.repoOf(conn.remote) : undefined
+    if (!conn.github || !repo) {
+      throw new BackupDisconnectError(`This device is connected to ${conn.remote} by its Git URL, not by signing in with GitHub, so Agent Store holds no GitHub authorization to ${what}; do it on the Git host, or disconnect this device only`, 'not-github')
+    }
+    return { login: conn.github.login, repo }
+  }
+
+  async startGitHubDeleteSignIn(): Promise<GitHubDeviceCode> {
+    await this.locked(async () => {
+      const conn = await readConnection(this.aasHome)
+      if (!conn) throw new BackupNotConnectedError()
+      this.githubOf(conn, 'delete the repository with')
+      await deleteGitHubDeleteSignIn(this.aasHome)
+    })
+    return this.github.startDeviceFlow('delete')
+  }
+
+  async pollGitHubDeleteSignIn(deviceCode: string): Promise<GitHubDeleteSignInPoll> {
+    const poll = await this.github.pollToken(deviceCode, 'delete')
+    if (poll.status !== 'approved') return poll
+    const keep = async () => this.locked(async () => {
+      const conn = await readConnection(this.aasHome)
+      if (!conn) throw new BackupNotConnectedError()
+      const gh = this.githubOf(conn, 'delete the repository with')
+      const login = await this.github.login(poll.token)
+      if (login.toLowerCase() !== gh.login.toLowerCase()) {
+        throw new BackupGitHubError(`GitHub approved the sign-in as ${login}, but this backup is connected as ${gh.login}; sign in as ${gh.login} to delete ${gh.repo}`, 'github-signin-needed')
+      }
+      await writeGitHubDeleteSignIn(this.aasHome, { token: poll.token, login, approvedAt: new Date().toISOString() })
+      return { status: 'approved' as const, login, repo: gh.repo }
+    })
+    try {
+      return await keep()
+    } catch (e) {
+      await this.github.revoke([poll.token]).catch(() => undefined)
+      throw e
+    }
   }
 
   private async statusOf(options: { fetch?: boolean }): Promise<BackupStatus> {
@@ -591,7 +655,7 @@ export class BackupService {
       device: conn.device,
       connectedAt: conn.connectedAt,
       hasCredentials: !!s.credentials,
-      ...(conn.github ? { github: conn.github } : {}),
+      ...(conn.github ? { github: { login: conn.github.login, ...this.githubRepo(conn) } } : {}),
       ...(s.state.lastSync ? { lastSync: s.state.lastSync } : {}),
       conflicts: s.state.conflicts,
       missingSecrets: missingSecrets(s.state.blocked),
@@ -736,9 +800,56 @@ export class BackupService {
     })
   }
 
-  async disconnect(): Promise<void> {
-    await this.locked(async () => {
+  /**
+   * Each level does the ones before it, the GitHub steps first: deleting the repository, then revoking,
+   * then removing ~/.agent-store/backup/. A GitHub step that fails throws before anything here is removed.
+   */
+  async disconnect(options: BackupDisconnectOptions = {}): Promise<BackupDisconnectResult> {
+    const level = options.level ?? 'device'
+    return this.locked(async () => {
+      const conn = await readConnection(this.aasHome)
+      if (!conn) {
+        if (level !== 'device') throw new BackupNotConnectedError()
+        await rm(backupDir(this.aasHome), { recursive: true, force: true })
+        return { level }
+      }
+      const result: BackupDisconnectResult = { level, remote: conn.remote, ...(conn.github ? this.githubRepo(conn) : {}) }
+      if (level !== 'device') {
+        const gh = this.githubOf(conn, level === 'delete' ? 'delete the repository with' : 'revoke')
+        const authorizations = this.github.authorizationsUrl()
+        if (authorizations) result.authorizationsUrl = authorizations
+        const tokens: string[] = []
+        const credentials = await readCredentials(this.aasHome)
+        if (credentials?.password) tokens.push(credentials.password)
+
+        if (level === 'delete') {
+          if ((options.confirm ?? '').trim().toLowerCase() !== gh.repo.toLowerCase()) {
+            throw new BackupDisconnectError(`Type the repository name, ${gh.repo}, to delete it; nothing was changed`, 'confirm-mismatch')
+          }
+          const signIn = await readGitHubDeleteSignIn(this.aasHome)
+          if (!signIn || !(Date.now() - Date.parse(signIn.approvedAt) <= SIGN_IN_TTL_MS)) {
+            await deleteGitHubDeleteSignIn(this.aasHome)
+            if (signIn) await this.github.revoke([signIn.token]).catch(() => undefined)
+            throw new BackupGitHubError(`Deleting ${gh.repo} needs a GitHub sign-in with the delete_repo scope, and none is waiting or it is too old; sign in again. Nothing was changed`, 'github-signin-needed')
+          }
+          try {
+            result.repoDeleted = await this.github.deleteRepo(signIn.token, gh.repo)
+          } catch (e) {
+            throw new BackupDisconnectError(`Deleting the repository ${gh.repo} on GitHub failed: ${(e as Error).message}. Nothing was deleted and nothing on this device was changed`, 'delete-failed')
+          }
+          tokens.push(signIn.token)
+        }
+
+        try {
+          await this.github.revoke(tokens)
+        } catch (e) {
+          const before = result.repoDeleted ? `The repository ${gh.repo} was ${result.repoDeleted === 'gone' ? 'already gone' : 'deleted'}, but revoking` : 'Revoking'
+          throw new BackupDisconnectError(`${before} the GitHub authorization failed: ${(e as Error).message}. Nothing on this device was changed; try again to finish`, 'revoke-failed')
+        }
+        result.revoked = true
+      }
       await rm(backupDir(this.aasHome), { recursive: true, force: true })
+      return result
     })
   }
 }

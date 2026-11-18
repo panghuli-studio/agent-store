@@ -17,6 +17,7 @@ import { Banner } from '../ui/states'
 import { toast } from '../ui/toast'
 import { Segmented } from '../ui/segmented'
 import { useSyncAction } from './actions'
+import { DisconnectBody } from './Disconnect'
 import { GitHubConnect } from './GitHubConnect'
 
 function fmt(template: string, ...values: (string | number)[]): string {
@@ -406,54 +407,6 @@ function RestoreBody({ snapshot, onClose }: { snapshot: BackupSnapshot; onClose:
         </Button>
         <Button variant="danger" disabled={busy} onClick={() => void restore()}>
           {t('bk.snapRestoreBtn')}
-        </Button>
-      </DialogFooter>
-    </>
-  )
-}
-
-function DisconnectBody({ onClose }: { onClose: () => void }) {
-  const t = useT()
-  const backup = useBackup()!
-  const { appendLine } = useTerminalLog()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<FriendlyError | null>(null)
-
-  async function disconnect() {
-    setBusy(true)
-    setError(null)
-    appendLine('$ aas backup disconnect')
-    try {
-      await backup.disconnect()
-      appendLine(`✓ ${t('bk.disconnected')}`, 'green')
-      toast(t('bk.disconnected'))
-      onClose()
-    } catch (err) {
-      appendLine(`✗ ${errorText(err)}`, 'red')
-      setError(describeBackupError(err, t))
-      setBusy(false)
-    }
-  }
-
-  return (
-    <>
-      <DialogBody>
-        <DialogTitle>{t('bk.discT')}</DialogTitle>
-        <Section title={t('bk.discWill')} className="mt-3">
-          <Steps lines={[t('bk.discWillD')]} />
-        </Section>
-        <Section title={t('bk.discWont')} className="mt-3">
-          <Steps lines={[t('bk.discWontRemote'), t('bk.discWontLocal')]} />
-        </Section>
-        <p className="mt-3 text-[12px] text-fg-3">{t('bk.discAgain')}</p>
-        {error && <Failure title={t('bk.failed.disconnect')} error={error} />}
-      </DialogBody>
-      <DialogFooter>
-        <Button data-autofocus onClick={onClose} disabled={busy}>
-          {t('common.cancel')}
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void disconnect()}>
-          {t('bk.discBtn')}
         </Button>
       </DialogFooter>
     </>

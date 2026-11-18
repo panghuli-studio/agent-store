@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import type { BackupStatus, BackupSyncResult, Engine } from '@as/types'
+import type { BackupDisconnectLevel, BackupDisconnectResult, BackupStatus, BackupSyncResult, Engine } from '@as/types'
 import { runBackup, type BackupIo } from '../backup'
 import { runRpc } from '../rpc'
 
@@ -154,4 +154,118 @@ test('pullBackup over RPC forwards the first-launch rollback option', async () =
   const e = engine({ pullBackup: async (options) => { got = options; return { pushed: null, uploaded: [], applied: [], snapshot: 'before', conflicts: [], missingSecrets: [], failed: [], localOnly: [], notRestorable: [], excludedFiles: [] } } })
   expect(await runRpc(e, ['pullBackup', '-'], () => undefined, async () => '[{"firstRun":true}]')).toBe(0)
   expect(got).toEqual({ firstRun: true })
+})
+
+const ghStatus: BackupStatus = { ...status, remote: 'https://github.com/me/agent-store-backup.git', hasCredentials: true, github: { login: 'me', repo: 'me/agent-store-backup' } }
+const removed = { level: 'device' as const, remote: ghStatus.remote, repo: 'me/agent-store-backup' }
+
+function disconnectEngine(s: BackupStatus, calls: unknown[], polls: Array<Awaited<ReturnType<Engine['pollGitHubBackupDeleteSignIn']>>> = []) {
+  return engine({
+    getBackupStatus: async () => s,
+    disconnectBackup: async (o?: { level?: BackupDisconnectLevel }): Promise<BackupDisconnectResult> => {
+      calls.push(['disconnect', o])
+      const level = o?.level ?? 'device'
+      return {
+        ...removed, level,
+        ...(s.github ? {} : { repo: undefined }),
+        ...(level !== 'device' ? { revoked: true, authorizationsUrl: 'https://github.com/settings/connections/applications/x' } : {}),
+        ...(level === 'delete' ? { repoDeleted: 'deleted' as const } : {}),
+      }
+    },
+    startGitHubBackupDeleteSignIn: async () => { calls.push(['start-delete']); return code },
+    pollGitHubBackupDeleteSignIn: async () => polls.shift()!,
+    cancelGitHubBackupSignIn: async () => { calls.push(['cancel']) },
+  })
+}
+
+test('disconnect alone forgets this device, says the remote stays and that the GitHub authorization was not revoked', async () => {
+  const calls: unknown[] = []
+  const o = io()
+  expect(await runBackup(disconnectEngine(ghStatus, calls), ['disconnect'], o)).toBe(0)
+  expect(calls).toEqual([['disconnect', undefined]])
+  const text = o.lines.join('\n')
+  expect(text).toContain('Removed ~/.agent-store/backup/')
+  expect(text).toContain('other devices keep syncing')
+  expect(text).toContain('--revoke does that')
+})
+
+test('disconnect --revoke explains, asks, and reports what other devices keep', async () => {
+  const calls: unknown[] = []
+  const o: TestIo = { ...io(), confirm: async () => true }
+  expect(await runBackup(disconnectEngine(ghStatus, calls), ['disconnect', '--revoke'], o)).toBe(0)
+  expect(calls).toEqual([['disconnect', { level: 'revoke' }]])
+  const text = o.lines.join('\n')
+  expect(text).toContain("revokes this device's GitHub token")
+  expect(text).toContain("Revoked this device's GitHub token")
+  expect(text).toContain('with their own sign-in')
+  expect(text).toContain('https://github.com/settings/connections/applications/x')
+
+  const no: unknown[] = []
+  expect(await runBackup(disconnectEngine(ghStatus, no), ['disconnect', '--revoke'], { ...io(), confirm: async () => false })).toBe(1)
+  expect(await runBackup(disconnectEngine(ghStatus, no), ['disconnect', '--revoke'], { ...io(), confirm: async () => null })).toBe(1)
+  expect(no).toEqual([])
+  expect(await runBackup(disconnectEngine(ghStatus, no), ['disconnect', '--revoke', '--yes'], io())).toBe(0)
+  expect(no).toEqual([['disconnect', { level: 'revoke' }]])
+})
+
+test('disconnect --delete-remote asks for the name before the deletion sign-in, then deletes', async () => {
+  const calls: unknown[] = []
+  const o: TestIo = { ...io(), wait: async () => true, ask: async () => 'me/agent-store-backup' }
+  const e = disconnectEngine(ghStatus, calls, [{ status: 'pending' }, { status: 'approved', login: 'me', repo: 'me/agent-store-backup' }])
+  expect(await runBackup(e, ['disconnect', '--delete-remote'], o)).toBe(0)
+  expect(calls).toEqual([['start-delete'], ['disconnect', { level: 'delete', confirm: 'me/agent-store-backup' }]])
+  const text = o.lines.join('\n')
+  expect(text).toContain('cannot be undone')
+  expect(text).toContain('"delete_repo" scope')
+  expect(text).toContain('Deleted the repository me/agent-store-backup on GitHub')
+  expect(text).toContain('their sync now fails')
+
+  const wrong: unknown[] = []
+  expect(await runBackup(disconnectEngine(ghStatus, wrong), ['disconnect', '--delete-remote'], { ...io(), ask: async () => 'me/other' })).toBe(1)
+  expect(await runBackup(disconnectEngine(ghStatus, wrong), ['disconnect', '--delete-remote'], { ...io(), ask: async () => null })).toBe(1)
+  expect(wrong).toEqual([])
+
+  const denied: unknown[] = []
+  const d: TestIo = { ...io(), wait: async () => true }
+  expect(await runBackup(disconnectEngine(ghStatus, denied, [{ status: 'denied' }]), ['disconnect', '--delete-remote', '--confirm', 'me/agent-store-backup'], d)).toBe(1)
+  expect(d.lines.join('\n')).toContain('Nothing was changed')
+  expect(denied).toEqual([['start-delete']])
+})
+
+test('a failed deletion drops the deletion sign-in and prints which step failed', async () => {
+  const calls: unknown[] = []
+  const e = engine({
+    getBackupStatus: async () => ghStatus,
+    startGitHubBackupDeleteSignIn: async () => code,
+    pollGitHubBackupDeleteSignIn: async () => ({ status: 'approved', login: 'me', repo: 'me/agent-store-backup' }),
+    disconnectBackup: async () => { throw Object.assign(new Error('Deleting the repository me/agent-store-backup on GitHub failed: GitHub answered 403'), { reason: 'delete-failed' }) },
+    cancelGitHubBackupSignIn: async () => { calls.push(['cancel']) },
+  })
+  const o: TestIo = { ...io(), wait: async () => true }
+  expect(await runBackup(e, ['disconnect', '--delete-remote', '--confirm', 'me/agent-store-backup'], o)).toBe(1)
+  expect(o.lines.join('\n')).toContain('Deleting the repository me/agent-store-backup on GitHub failed')
+  expect(calls).toEqual([['cancel']])
+})
+
+test('revoking and deleting are refused for a Git URL connection, with the reason', async () => {
+  for (const flag of ['--revoke', '--delete-remote']) {
+    const calls: unknown[] = []
+    const o: TestIo = { ...io(), confirm: async () => true, ask: async () => 'x' }
+    expect(await runBackup(disconnectEngine(status, calls), ['disconnect', flag], o)).toBe(1)
+    expect(o.lines.join('\n')).toContain('connected by a Git URL')
+    expect(calls).toEqual([])
+  }
+  expect(await runBackup(disconnectEngine(status, []), ['disconnect', '--revoke', '--delete-remote'], io())).toBe(2)
+  expect(await runBackup(disconnectEngine(status, []), ['disconnect', '--confirm', 'a/b'], io())).toBe(2)
+})
+
+test('disconnectBackup takes its level over RPC', async () => {
+  const calls: unknown[] = []
+  const out: string[] = []
+  const e = disconnectEngine(ghStatus, calls, [{ status: 'pending' }])
+  expect(await runRpc(e, ['disconnectBackup', '-'], s => out.push(s), async () => '[{"level":"revoke"}]')).toBe(0)
+  expect(await runRpc(e, ['startGitHubBackupDeleteSignIn', '-'], s => out.push(s), async () => '[]')).toBe(0)
+  expect(await runRpc(e, ['pollGitHubBackupDeleteSignIn', '-'], s => out.push(s), async () => '["dc-1"]')).toBe(0)
+  expect(out.map(l => JSON.parse(l).ok)).toEqual([true, true, true])
+  expect(calls).toEqual([['disconnect', { level: 'revoke' }], ['start-delete']])
 })

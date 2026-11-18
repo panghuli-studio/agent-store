@@ -1,6 +1,6 @@
 import { errorFields, resolvePaths, runDoctor } from '@as/client-core'
 import type { ImportScanOptions, ImportUndoOptions } from '@as/types'
-import type { Engine, BackupConflictChoice, BackupConnectOptions, GitHubConnectOptions, AddProjectOptions, BatchOperation, ProjectInstallOptions, ProjectUninstallOptions, BudgetConfig, EnableOptions, DisableOptions, InstallOptions, ListOptions, ResourceKind, SearchOptions, ToolTarget, UsageSummaryOptions } from '@as/types'
+import type { Engine, BackupConflictChoice, BackupConnectOptions, BackupDisconnectOptions, GitHubConnectOptions, AddProjectOptions, BatchOperation, ProjectInstallOptions, ProjectUninstallOptions, BudgetConfig, EnableOptions, DisableOptions, InstallOptions, ListOptions, ResourceKind, SearchOptions, ToolTarget, UsageSummaryOptions } from '@as/types'
 
 type RpcHandler = (engine: Engine, args: unknown[]) => Promise<unknown>
 
@@ -76,7 +76,9 @@ const RPC_METHODS: Record<string, RpcHandler> = {
   listBackupSnapshots: (e) => e.listBackupSnapshots(),
   restoreBackupSnapshot: (e, a) => e.restoreBackupSnapshot(a[0] as string),
   listBackupHistory: (e, a) => e.listBackupHistory(a[0] as { limit?: number } | undefined),
-  disconnectBackup: (e) => e.disconnectBackup(),
+  startGitHubBackupDeleteSignIn: (e) => e.startGitHubBackupDeleteSignIn(),
+  pollGitHubBackupDeleteSignIn: (e, a) => e.pollGitHubBackupDeleteSignIn(a[0] as string),
+  disconnectBackup: (e, a) => e.disconnectBackup(a[0] as BackupDisconnectOptions | undefined),
   doctor: () => runDoctor(resolvePaths(), { agents: true }),
   detectAgents: (e) => e.detectAgents(),
   importScan: (e, a) => e.scanImports(a[0] as ImportScanOptions | undefined),

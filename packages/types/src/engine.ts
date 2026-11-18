@@ -9,9 +9,9 @@ import type {
   ProjectSummary, ProjectUninstallOptions, ProjectUninstallResult,
 } from './projects'
 import type {
-  BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupHistoryEntry, BackupResolveResult,
-  BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions, GitHubDeviceCode,
-  GitHubSignInPoll,
+  BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupDisconnectOptions, BackupDisconnectResult,
+  BackupHistoryEntry, BackupResolveResult, BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult,
+  GitHubConnectOptions, GitHubDeleteSignInPoll, GitHubDeviceCode, GitHubSignInPoll,
 } from './backup'
 import type {
   AgentDetection, ImportApplyResult, ImportRecordSummary, ImportScan, ImportScanOptions, ImportUndoOptions, ImportUndoResult,
@@ -498,8 +498,15 @@ export interface Engine {
   pollGitHubBackupSignIn(deviceCode: string): Promise<GitHubSignInPoll>
   /** Connects to the offered backup, or creates the private repository and connects to it. */
   connectGitHubBackup(options: GitHubConnectOptions): Promise<BackupConnectResult>
-  /** Forgets an approved sign-in that was not connected. */
+  /**
+   * Forgets an approved sign-in that was not connected, or, once connected, an approved deletion
+   * sign-in that was not used (its token is also revoked on GitHub).
+   */
   cancelGitHubBackupSignIn(): Promise<void>
+  /** Starts the extra device flow deleting the GitHub repository needs (scope `repo delete_repo`); GitHub connections only. */
+  startGitHubBackupDeleteSignIn(): Promise<GitHubDeviceCode>
+  /** One poll of it; the account approving must be the one connected. */
+  pollGitHubBackupDeleteSignIn(deviceCode: string): Promise<GitHubDeleteSignInPoll>
   /** Snapshot, then merge both ways per item, push, and apply what came from the remote. */
   backupNow(): Promise<BackupSyncResult>
   /** Applies remote changes here without uploading local ones. */
@@ -510,8 +517,12 @@ export interface Engine {
   /** Snapshots the current state, then makes this machine match the snapshot. */
   restoreBackupSnapshot(id: string): Promise<BackupRestoreResult>
   listBackupHistory(options?: { limit?: number }): Promise<BackupHistoryEntry[]>
-  /** Forgets the connection, local snapshots and the stored token on this device; the remote is left as it is. */
-  disconnectBackup(): Promise<void>
+  /**
+   * `device` (the default) forgets the connection, local snapshots and the stored token on this device.
+   * `revoke` first revokes this device's GitHub token; `delete` first deletes the GitHub repository
+   * (after the deletion sign-in) and revokes. A step that fails stops before anything here is removed.
+   */
+  disconnectBackup(options?: BackupDisconnectOptions): Promise<BackupDisconnectResult>
   /** Whether each agent's CLI and config directory are on this machine. Read-only. */
   detectAgents(): Promise<AgentDetection[]>
   /** The user's own skills and MCP entries Agent Store does not manage. Read-only; secrets left out. */

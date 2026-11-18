@@ -13,6 +13,7 @@ import type {
   AccessToken, DeviceAuthorization, DevicePoll, FavoriteEntry,
   BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupHistoryEntry, BackupResolveResult,
   BackupRestoreResult, BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions, GitHubDeviceCode, GitHubSignInPoll,
+  BackupDisconnectOptions, BackupDisconnectResult, GitHubDeleteSignInPoll,
   AgentDetection, ImportApplyResult, ImportRecordSummary, ImportScan, ImportScanOptions, ImportUndoOptions, ImportUndoResult,
 } from '@as/types'
 import { StoreClient } from '@as/sdk'
@@ -762,8 +763,16 @@ export class EngineImpl implements Engine {
     return this.backup.history(options)
   }
 
-  disconnectBackup(): Promise<void> {
-    return this.backup.disconnect()
+  startGitHubBackupDeleteSignIn(): Promise<GitHubDeviceCode> {
+    return this.backup.startGitHubDeleteSignIn()
+  }
+
+  pollGitHubBackupDeleteSignIn(deviceCode: string): Promise<GitHubDeleteSignInPoll> {
+    return this.backup.pollGitHubDeleteSignIn(deviceCode)
+  }
+
+  disconnectBackup(options?: BackupDisconnectOptions): Promise<BackupDisconnectResult> {
+    return this.backup.disconnect(options)
   }
 
   private get importPaths(): ImportPaths {

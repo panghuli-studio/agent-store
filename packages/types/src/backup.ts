@@ -66,8 +66,11 @@ export interface BackupStatus {
   device?: string
   connectedAt?: string
   hasCredentials?: boolean
-  /** Set when the connection was made by signing in with GitHub. */
-  github?: { login: string }
+  /**
+   * Set when the connection was made by signing in with GitHub; only then can `disconnectBackup`
+   * revoke the authorization and delete the repository. `repo` is `<owner>/<name>`.
+   */
+  github?: { login: string; repo?: string }
   lastSync?: { commit: string; at: string }
   /** Items that differ from the last sync and would be uploaded by `backupNow`. */
   localChanges: BackupItemRef[]
@@ -188,3 +191,42 @@ export interface GitHubConnectOptions {
   repo: 'existing' | 'new'
   device?: string
 }
+
+/**
+ * How far `disconnectBackup` goes (docs/backup-sync.md, "Disconnecting"); each level does the ones before it.
+ * `revoke` and `delete` are only for a connection made by signing in with GitHub.
+ */
+export type BackupDisconnectLevel = 'device' | 'revoke' | 'delete'
+
+export interface BackupDisconnectOptions {
+  /** `device` by default. */
+  level?: BackupDisconnectLevel
+  /** For `delete`: the repository's `<owner>/<name>` as the user typed it; it must match. */
+  confirm?: string
+}
+
+export interface BackupDisconnectResult {
+  level: BackupDisconnectLevel
+  /** The remote that was connected; undefined when this device was not connected. */
+  remote?: string
+  /** `<owner>/<name>`, for a connection made by signing in with GitHub. */
+  repo?: string
+  /** For `delete`: `deleted`, or `gone` when it no longer existed on GitHub. */
+  repoDeleted?: 'deleted' | 'gone'
+  /** For `revoke` and `delete`: GitHub accepted the revocation of this device's token(s). */
+  revoked?: boolean
+  /** The GitHub page where Agent Store's authorization is listed, when the client id is known. */
+  authorizationsUrl?: string
+}
+
+/**
+ * One poll of the extra sign-in deleting the repository needs (scope `delete_repo`). On `approved`
+ * the token stays in the core (backup/github-delete.json, 0600) until disconnectBackup or
+ * cancelGitHubBackupSignIn; it is never returned.
+ */
+export type GitHubDeleteSignInPoll =
+  | { status: 'pending' }
+  | { status: 'slow_down'; interval: number }
+  | { status: 'denied' }
+  | { status: 'expired' }
+  | { status: 'approved'; login: string; repo: string }

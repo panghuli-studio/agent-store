@@ -548,6 +548,57 @@ HOME=$HOME_C timeout 120 "$SIDECAR" backup connect --github --device cli-c </dev
 echo >>"$OUT/cli.txt"
 check "aas backup connect --github without a terminal connected to the backup found on the account" 'grep -q cli-c "$HOME_C/.agent-store/backup/connection.json" && grep -q "Found the backup an earlier device made" "$OUT/cli.txt"'
 check "the GitHub token is in no log, no CLI output and no sidecar command line" '! grep -qs "$GH_TOKEN" "$OUT"/app-*.log "$OUT/cli.txt" "$ARGV_LOG" "$OUT/fake-github.log"'
+revoked() { curl -s "http://127.0.0.1:$GH_PORT/control/revoked" | python3 -c 'import json,sys; print(json.load(sys.stdin)["revoked"].count(sys.argv[1]))' "$1"; }
+echo "\$ (cli-c) aas backup disconnect --revoke --yes" >>"$OUT/cli.txt"
+HOME=$HOME_C "$SIDECAR" backup disconnect --revoke --yes </dev/null >>"$OUT/cli.txt" 2>&1
+echo >>"$OUT/cli.txt"
+check "aas backup disconnect --revoke revoked the token, removed the local folder and kept the repository" '[ "$(revoked repo)" = 1 ] && [ ! -e "$HOME_C/.agent-store/backup" ] && grep -q "Revoked this device" "$OUT/cli.txt" && [ -d "$GH_REPO" ]'
+# 13b. Disconnecting a GitHub backup (#233), in Chinese and English: the three levels, each
+#      explained in the dialog before it runs, then deleting the remote repository (the name typed,
+#      a second device code for delete_repo) and the result. Before it, aas backup disconnect
+#      --revoke for the CLI device, which leaves the repository. The checks confirm the repository
+#      is gone only after the deletion sign-in, both of this device's tokens were revoked and the
+#      local backup folder was removed.
+for lang in zh en; do
+  if [ "$lang" = zh ]; then LOC=(zh_CN.UTF-8 zh_CN:zh); else LOC=(en_US.UTF-8 en_US:en); fi
+  gh_mode auto
+  cli backup connect --github --device desk-a
+  cli backup now
+  REVOKED_BEFORE=$(revoked repo),$(revoked repo,delete_repo)
+  GH_DISC_REPO=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["github"]["repo"])' "$CONN")
+  check "$lang: the GitHub connection records its repository" '[ -n "$GH_DISC_REPO" ] && [ -d "$GH_ROOT/$GH_DISC_REPO.git" ]'
+  gh_mode wait
+  launch_in "${LOC[@]}" "$lang"
+  # 断开…: panel, 拉取, 立即备份, the switch, 断开…; the dialog focuses 取消. Back one is the level.
+  backup_page 8
+  xdotool key Tab Tab Tab Tab Tab Return
+  sleep 2
+  shot "33h-$lang-backup-disconnect-device"
+  xdotool key shift+Tab Down
+  sleep 1
+  shot "33i-$lang-backup-disconnect-revoke"
+  xdotool key Down
+  sleep 1
+  xdotool key Tab
+  xdotool type --delay 40 "$GH_DISC_REPO"
+  sleep 1
+  shot "33j-$lang-backup-disconnect-delete"
+  check "$lang: nothing is deleted before the deletion sign-in" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
+  # The typed name, then 取消, then 登录 GitHub 并删除.
+  xdotool key Tab Tab Return
+  sleep 5
+  shot "33k-$lang-backup-disconnect-code"
+  check "$lang: still nothing deleted while the deletion sign-in waits" '[ -d "$GH_ROOT/$GH_DISC_REPO.git" ] && [ -e "$CONN" ]'
+  gh_mode approve
+  sleep 15
+  shot "33l-$lang-backup-disconnect-deleted"
+  xdotool key Escape
+  sleep 2
+  stop_app
+  check "$lang: the repository was deleted on GitHub and this device's backup folder removed" '[ ! -e "$GH_ROOT/$GH_DISC_REPO.git" ] && [ ! -e "$HOME/.agent-store/backup" ]'
+  check "$lang: the connection's token and the deletion token were both revoked" '[ "$(revoked repo),$(revoked repo,delete_repo)" = "$((${REVOKED_BEFORE%,*} + 1)),$((${REVOKED_BEFORE#*,} + 1))" ]'
+done
+check "the GitHub tokens are in no log, no CLI output and no sidecar command line after disconnecting" '! grep -qs "$GH_TOKEN" "$OUT"/app-*.log "$OUT/cli.txt" "$ARGV_LOG" "$OUT/fake-github.log"'
 kill "$GH_PID" 2>/dev/null
 unset AS_GITHUB_CLIENT_ID AS_GITHUB_URL AS_GITHUB_API_URL
 

@@ -47,6 +47,44 @@ function withNode(template: string, node: ReactNode): ReactNode {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** The code to enter on GitHub and where; also used by the deletion sign-in (Disconnect.tsx). */
+export function DeviceCodeWait({ userCode, uri, expiresAt, title }: { userCode: string; uri: string; expiresAt: number; title?: string }) {
+  const t = useT()
+  const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60_000))
+  return (
+    <div className="grid justify-items-center gap-2.5 pb-1.5 pt-3 text-center">
+      <Spinner className="h-7 w-7 border-[3px]" />
+      <h3 className="text-[15px] font-bold">{title ?? t('bk.ghWaitT')}</h3>
+      <p className="max-w-[46ch] text-[13px] text-fg-2">
+        {withNode(t('bk.ghWaitD'), <code className="font-mono text-[12px] text-fg">{uri}</code>)}
+      </p>
+      <div className="mt-1 grid justify-items-center gap-1">
+        <span className="text-[11.5px] text-fg-3">{t('bk.ghCode')}</span>
+        <code data-testid="backup-user-code" className="rounded-ctl border border-line-strong bg-panel px-4 py-2 font-mono text-[22px] font-bold tracking-[0.14em] text-fg">
+          {formatUserCode(userCode)}
+        </code>
+        <span className="text-[11.5px] text-fg-3">{fmt(t('bk.ghValid'), minutes)}</span>
+      </div>
+      <div className="mt-1 flex gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            const done = navigator.clipboard?.writeText(userCode)
+            if (done) done.then(() => toast(t('bk.ghCopied')), () => undefined)
+          }}
+        >
+          <Copy />
+          {t('bk.ghCopy')}
+        </Button>
+        <Button size="sm" onClick={() => void openExternal(uri).catch(() => undefined)}>
+          <ExternalLink />
+          {t('bk.ghOpen')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Sign in with GitHub's device code, then connect to the backup found on the account or to the
  * private repository the core creates. The token never reaches this window: the core keeps it.
@@ -169,7 +207,6 @@ export function GitHubConnect({
   }
 
   const active = flow.step !== 'idle' && flow.step !== 'ended'
-  const minutes = flow.step === 'waiting' ? Math.max(1, Math.round((flow.expiresAt - Date.now()) / 60_000)) : 0
 
   let body: ReactNode
   let footer: ReactNode
@@ -213,38 +250,7 @@ export function GitHubConnect({
     )
     footer = <Button onClick={cancel}>{t('bk.ghCancel')}</Button>
   } else if (flow.step === 'waiting') {
-    body = (
-      <div className="grid justify-items-center gap-2.5 pb-1.5 pt-3 text-center">
-        <Spinner className="h-7 w-7 border-[3px]" />
-        <h3 className="text-[15px] font-bold">{t('bk.ghWaitT')}</h3>
-        <p className="max-w-[46ch] text-[13px] text-fg-2">
-          {withNode(t('bk.ghWaitD'), <code className="font-mono text-[12px] text-fg">{flow.uri}</code>)}
-        </p>
-        <div className="mt-1 grid justify-items-center gap-1">
-          <span className="text-[11.5px] text-fg-3">{t('bk.ghCode')}</span>
-          <code data-testid="backup-user-code" className="rounded-ctl border border-line-strong bg-panel px-4 py-2 font-mono text-[22px] font-bold tracking-[0.14em] text-fg">
-            {formatUserCode(flow.userCode)}
-          </code>
-          <span className="text-[11.5px] text-fg-3">{fmt(t('bk.ghValid'), minutes)}</span>
-        </div>
-        <div className="mt-1 flex gap-2">
-          <Button
-            size="sm"
-            onClick={() => {
-              const done = navigator.clipboard?.writeText(flow.userCode)
-              if (done) done.then(() => toast(t('bk.ghCopied')), () => undefined)
-            }}
-          >
-            <Copy />
-            {t('bk.ghCopy')}
-          </Button>
-          <Button size="sm" onClick={() => void openExternal(flow.uri).catch(() => undefined)}>
-            <ExternalLink />
-            {t('bk.ghOpen')}
-          </Button>
-        </div>
-      </div>
-    )
+    body = <DeviceCodeWait userCode={flow.userCode} uri={flow.uri} expiresAt={flow.expiresAt} />
     footer = <Button onClick={cancel}>{t('bk.ghCancel')}</Button>
   } else if (flow.step === 'offer') {
     const id = run.current

@@ -6,6 +6,11 @@ import { FORMAT_FILE } from './layout'
 
 /** The only scope requested: an OAuth app needs `repo` to create a private repository and push to it. */
 export const GITHUB_SCOPE = 'repo'
+/**
+ * Asked for only by the extra sign-in that deletes the repository (docs/backup-sync.md, "Disconnecting").
+ * `repo` comes with it so the token can see the private repository it deletes.
+ */
+export const GITHUB_DELETE_SCOPE = 'delete_repo'
 
 /** The repository name tried first; `-2`, `-3`… follow when it is taken by something else. */
 export const BACKUP_REPO_NAME = 'agent-store-backup'
@@ -98,8 +103,10 @@ export class GitHubClient {
     return json
   }
 
-  async startDeviceFlow(): Promise<GitHubDeviceCode> {
-    const json = await this.form('/login/device/code', { client_id: this.requireClientId(), scope: GITHUB_SCOPE }, 'starting the sign-in')
+  /** `purpose: 'delete'` asks for `repo delete_repo` instead of `repo`. */
+  async startDeviceFlow(purpose: 'connect' | 'delete' = 'connect'): Promise<GitHubDeviceCode> {
+    const scope = purpose === 'delete' ? `${GITHUB_SCOPE} ${GITHUB_DELETE_SCOPE}` : GITHUB_SCOPE
+    const json = await this.form('/login/device/code', { client_id: this.requireClientId(), scope }, 'starting the sign-in')
     if (typeof json['error'] === 'string') throw this.flowError(json)
     const { device_code, user_code, verification_uri, expires_in, interval } = json
     if (typeof device_code !== 'string' || typeof user_code !== 'string' || typeof verification_uri !== 'string') {
@@ -114,7 +121,8 @@ export class GitHubClient {
     }
   }
 
-  async pollToken(deviceCode: string): Promise<TokenPoll> {
+  /** `purpose: 'delete'` also requires `delete_repo` in the granted scopes. */
+  async pollToken(deviceCode: string, purpose: 'connect' | 'delete' = 'connect'): Promise<TokenPoll> {
     const json = await this.form('/login/oauth/access_token', {
       client_id: this.requireClientId(), device_code: deviceCode, grant_type: DEVICE_GRANT,
     }, 'waiting for the sign-in')
@@ -129,6 +137,11 @@ export class GitHubClient {
     const scopes = typeof json['scope'] === 'string' ? json['scope'].split(/[ ,]+/) : [GITHUB_SCOPE]
     if (!scopes.includes(GITHUB_SCOPE)) {
       throw new BackupGitHubError(`The sign-in was approved without the "${GITHUB_SCOPE}" scope, which creating a private repository needs; sign in again and keep it`, 'github-signin-needed')
+    }
+    if (purpose === 'delete' && !scopes.includes(GITHUB_DELETE_SCOPE)) {
+      // Not kept, so revoked at once: a token nobody holds should not stay valid.
+      await this.revoke([token]).catch(() => undefined)
+      throw new BackupGitHubError(`The sign-in was approved without the "${GITHUB_DELETE_SCOPE}" scope, which deleting the repository needs; sign in again and keep it`, 'github-signin-needed')
     }
     return { status: 'approved', token }
   }
@@ -222,6 +235,46 @@ export class GitHubClient {
     })
     if (r.status !== 201) throw this.failed(what, r)
     return toRepo(r.json as RepoJson)
+  }
+
+  /**
+   * Revokes the tokens through GitHub's credential revocation endpoint, which takes no authentication
+   * and so no client secret (revoking the whole grant would need one). GitHub notifies the owner by email.
+   */
+  async revoke(tokens: string[]): Promise<void> {
+    if (!tokens.length) return
+    const what = 'revoking the GitHub token'
+    const res = await this.request(`${this.apiUrl}/credentials/revoke`, {
+      method: 'POST',
+      headers: { Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' },
+      body: JSON.stringify({ credentials: tokens }),
+    }, what)
+    let json: unknown = null
+    try { json = await res.json() } catch { /* some answers have no body */ }
+    if (res.status !== 202 && res.status !== 200 && res.status !== 204) throw this.failed(what, { status: res.status, json })
+  }
+
+  /** Deletes `owner/name`; `gone` when it no longer exists. The token needs `delete_repo`. */
+  async deleteRepo(token: string, fullName: string): Promise<'deleted' | 'gone'> {
+    const what = `deleting the repository ${fullName}`
+    const [owner, name] = fullName.split('/')
+    const r = await this.api(token, 'DELETE', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, what)
+    if (r.status === 204) return 'deleted'
+    if (r.status === 404) return 'gone'
+    throw this.failed(what, r)
+  }
+
+  /** The page listing Agent Store among the user's authorized OAuth apps; undefined without a client id. */
+  authorizationsUrl(): string | undefined {
+    return this.clientId ? `${this.webUrl}/settings/connections/applications/${encodeURIComponent(this.clientId)}` : undefined
+  }
+
+  /** `owner/name` of a remote made by remoteOf on this GitHub, else undefined. */
+  repoOf(remote: string): string | undefined {
+    const prefix = `${this.webUrl}/`
+    if (!remote.startsWith(prefix) || !remote.endsWith('.git')) return undefined
+    const full = remote.slice(prefix.length, -'.git'.length)
+    return /^[^/]+\/[^/]+$/.test(full) ? full : undefined
   }
 
   /** The HTTPS remote for `owner/name` on this GitHub. */

@@ -80,6 +80,10 @@ const REASON_KEYS: Record<string, string> = {
   'github-not-configured': 'githubNotConfigured',
   'github-signin-needed': 'githubSignin',
   'github-failed': 'github',
+  'not-github': 'notGithub',
+  'confirm-mismatch': 'confirmMismatch',
+  'delete-failed': 'deleteFailed',
+  'revoke-failed': 'revokeFailed',
 }
 
 /** What went wrong and what to do next; the engine's own text stays behind 详细信息. */

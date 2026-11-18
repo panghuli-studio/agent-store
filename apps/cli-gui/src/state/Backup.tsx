@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
   BackupConflict, BackupConflictChoice, BackupConnectOptions, BackupConnectResult, BackupResolveResult, BackupRestoreResult,
-  BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions,
+  BackupSnapshot, BackupStatus, BackupSyncResult, GitHubConnectOptions, BackupDisconnectOptions, BackupDisconnectResult,
 } from '@as/types'
 import { callRpc, watchRpc } from '../lib/rpc'
 import { AUTO_TIMING, BACKED_UP_METHODS, autoDue, isBusyError, type AutoTiming } from '../lib/backup'
@@ -48,7 +48,8 @@ interface BackupValue {
   sync: (mode: 'now' | 'pull', firstRun?: boolean) => Promise<BackupSyncResult>
   resolve: (item: string, choice: BackupConflictChoice) => Promise<BackupResolveResult>
   restore: (id: string) => Promise<BackupRestoreResult>
-  disconnect: () => Promise<void>
+  /** Before `delete`, the deletion sign-in runs through `read` (startGitHubBackupDeleteSignIn / pollGitHubBackupDeleteSignIn). */
+  disconnect: (options?: BackupDisconnectOptions) => Promise<BackupDisconnectResult>
   dialog: BackupDialog | null
   openDialog: (d: BackupDialog | null) => void
 }
@@ -206,8 +207,8 @@ export function BackupProvider({ children, timing = AUTO_TIMING }: { children: R
     [manual, bumpInstalledVersion]
   )
   const disconnect = useCallback(
-    () =>
-      manual('disconnect', () => callRpc<void>('disconnectBackup'), () => {
+    (options?: BackupDisconnectOptions) =>
+      manual('disconnect', () => callRpc<BackupDisconnectResult>('disconnectBackup', options ? [options] : []), () => {
         setLastRun(null)
         setAutoError(null)
       }),

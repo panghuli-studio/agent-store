@@ -58,8 +58,8 @@ and push to it: `public_repo` cannot reach private repositories. A sign-in appro
   every export like the other backup tokens.
 - **Never:** in an RPC result or the desktop client's window, in argv, in a log line, in an error message or in the
   repository.
-- **Revoking:** `disconnect` deletes it from this machine but does not revoke it. Revoke it on GitHub under Settings ›
-  Applications › Authorized OAuth Apps.
+- **Revoking:** `disconnect --revoke` and `--delete-remote` revoke it on GitHub; plain `disconnect` only deletes it from
+  this machine. See [Disconnecting](#disconnecting).
 
 **The OAuth app.** The device flow needs the client id of an OAuth app with *Enable Device Flow* checked. It needs no
 callback URL and no client secret, so no secret is in the code or the build. The id is the `DEFAULT_GITHUB_CLIENT_ID`
@@ -254,11 +254,66 @@ no secrets and is never pushed. The last 30 are kept.
 
 ## Disconnecting
 
-`aas backup disconnect` forgets the connection on this device only. It deletes `~/.agent-store/backup/`: the local
-repository, its snapshots and the stored token. The remote repository is left as it is, and connecting again finds the
-backup.
+```
+aas backup disconnect [--revoke | --delete-remote [--confirm <owner>/<name>]] [--yes]
+```
 
-Revoking a GitHub sign-in and deleting the remote are not done by Agent Store.
+Three levels. Each does the ones before it, and each is explained before it runs: the CLI prints what it will do, the
+desktop client's 断开… dialog lists what is done and what is left for the level picked.
+
+| Level | Done | Left as it is |
+| --- | --- | --- |
+| This device only (default) | `~/.agent-store/backup/` is deleted: the local repository, its snapshots and the stored token | The remote and the backup in it; other devices keep syncing, and connecting again finds the backup. A GitHub token is not revoked |
+| `--revoke` | This device's GitHub token is revoked, then the above | The repository; other devices keep syncing with their own sign-in, since every device signs in with its own token |
+| `--delete-remote` | The GitHub repository is deleted, this device's tokens are revoked, then the above | What is installed on every device. Other devices stay connected, but their sync now fails with `not-found`; disconnect each of them (this device only) |
+
+None of them touches the skills, MCP servers and providers installed on any device.
+
+**GitHub only.** Revoking and deleting are offered only for a connection made by signing in with GitHub, where Agent
+Store holds the token and knows the repository (`connection.json` keeps `github.repo`; a connection made before it is
+read from the remote URL). For a Git URL they are refused with `not-github`, and the client shows them greyed out with
+the reason: Agent Store holds no GitHub authorization for it, and deletes no repository it was not connected to by a
+GitHub sign-in. Revoke the token and delete the repository on the Git host instead.
+
+**Revoking.** The token is revoked through GitHub's [credential revocation
+endpoint](https://docs.github.com/en/rest/credentials/revoke) (`POST /credentials/revoke`), which takes no
+authentication. Revoking the whole authorization (`DELETE /applications/{client_id}/grant`) would need the OAuth app's
+client secret, which Agent Store does not have (see [The OAuth app](#connecting-with-github)), so it is not used:
+
+- GitHub emails the account owner that a token was revoked.
+- Agent Store may stay listed under Settings › Applications › Authorized OAuth Apps; the result links to its page there,
+  `https://github.com/settings/connections/applications/<client id>`, where Revoke removes it.
+
+**Deleting.** `repo` cannot delete a repository, and the connection's token is not given more than it needs, so deleting
+takes one more device-code sign-in that asks for `repo delete_repo`:
+
+1. **Name:** the user types the repository's `<owner>/<name>` (any case). The CLI asks before the sign-in, or takes
+   `--confirm`; without a terminal and without `--confirm` it stops. The client enables the button once the name matches.
+2. **Sign-in:** the same device flow as connecting. The approval must be by the connected account and must grant
+   `delete_repo`; otherwise its token is revoked at once and nothing else happens.
+3. **Delete:** `DELETE /repos/<owner>/<name>`. A repository that is already gone (404) counts as deleted, so a retry after a
+   failure further on finishes.
+4. **Revoke:** the connection's token and the deletion token, in one call.
+5. **This device:** `~/.agent-store/backup/` is deleted.
+
+**The deletion token.** From approval until it is used it is kept in `~/.agent-store/backup/github-delete.json` (0600),
+next to `credentials.json`; older than 30 minutes it is refused, revoked and deleted. Cancelling
+(`cancelGitHubBackupSignIn`, or closing the dialog) deletes it and revokes it on GitHub. It is never in an RPC result, the
+window, argv, a log line, an error message or the repository, like the connection's token.
+
+**Failures.** The GitHub steps run first and the local folder is deleted last, so a step that fails leaves everything on
+this device as it was, the connection included. The error says which step failed:
+
+| `reason` | Step | State |
+| --- | --- | --- |
+| `confirm-mismatch` | the typed name | nothing was done |
+| `github-signin-needed` | the deletion sign-in is missing, too old, for another account or without `delete_repo` | nothing was done |
+| `delete-failed` | deleting the repository (e.g. 403 without admin rights) | the repository is still there; nothing was revoked |
+| `revoke-failed` | revoking | the message says whether the repository was already deleted; trying again finishes |
+
+**Result.** `disconnectBackup` returns the level, the remote, the repository, whether it was `deleted` or already `gone`,
+whether the tokens were revoked, and the authorizations page. The CLI and the client report from it what was done and
+what is left on other devices.
 
 ## Local files
 
@@ -267,6 +322,7 @@ Revoking a GitHub sign-in and deleting the remote are not done by Agent Store.
 ~/.agent-store/backup/connection.json    remote, branch, device
 ~/.agent-store/backup/credentials.json   HTTPS token (also the GitHub token once connected), 0600
 ~/.agent-store/backup/github-signin.json GitHub token between approval and connecting, 0600
+~/.agent-store/backup/github-delete.json GitHub token (delete_repo) between approval and deleting the repository, 0600
 ~/.agent-store/backup/state.json         last synced commit, pending conflicts, missing keys, failures
 ~/.agent-store/backup.lock               one backup operation at a time, across the CLI and the desktop client
 ```
@@ -278,11 +334,12 @@ The `Engine` methods are:
 - `getBackupStatus`;
 - `connectBackup`;
 - `startGitHubBackupSignIn`, `pollGitHubBackupSignIn`, `connectGitHubBackup`, `cancelGitHubBackupSignIn`;
+- `startGitHubBackupDeleteSignIn`, `pollGitHubBackupDeleteSignIn` (the deletion sign-in);
 - `backupNow`, `pullBackup`;
 - `resolveBackupConflict`;
 - `listBackupSnapshots`, `restoreBackupSnapshot`;
 - `listBackupHistory`;
-- `disconnectBackup`.
+- `disconnectBackup({ level, confirm })`.
 
 The client passes RPC arguments over stdin (`aas __rpc <method> -`), so the token given to `connectBackup` never
 reaches argv. Errors carry `code` (class name) and `reason`:
@@ -310,6 +367,10 @@ reaches argv. Errors carry `code` (class name) and `reason`:
 | `github-not-configured` | this build has no GitHub OAuth client id, or GitHub refused it (`BackupGitHubError`) |
 | `github-signin-needed` | no approved sign-in is waiting, it is too old, GitHub no longer accepts it, or it lacks `repo` (`BackupGitHubError`) |
 | `github-failed` | GitHub answered with an error, e.g. creating the repository failed (`BackupGitHubError`) |
+| `not-github` | revoking or deleting was asked for a connection not made by signing in with GitHub (`BackupDisconnectError`) |
+| `confirm-mismatch` | the repository name typed to delete it does not match (`BackupDisconnectError`) |
+| `delete-failed` | deleting the GitHub repository failed; nothing on this device changed (`BackupDisconnectError`) |
+| `revoke-failed` | revoking the GitHub token failed; nothing on this device changed (`BackupDisconnectError`) |
 
 The four `GitError` reasons are read from git's and ssh's English messages; any other git failure has no reason.
 
@@ -333,7 +394,8 @@ the first-launch choice file contains only a boolean.
 ### In the desktop client
 
 Settings › Backup & sync (`apps/cli-gui/src/components/backup/`) covers connecting (new backup or restore from an
-existing one, each with GitHub or a Git URL), status, conflicts, missing keys, snapshots, history and disconnecting. Automatic sync runs in the client,
+existing one, each with GitHub or a Git URL), status, conflicts, missing keys, snapshots, history and disconnecting at the
+three levels. Automatic sync runs in the client,
 since the CLI has no resident process:
 
 - after a change made through the client (install, enable, config, update, bulk actions…) has been quiet for about 2 minutes, it backs up;
@@ -347,5 +409,6 @@ since the CLI has no resident process:
 
 - **Automatic sync from the CLI**; only the desktop client syncs on its own.
 - **Other hosts' sign-in:** only GitHub (github.com) creates the repository; GitLab, Gitea and others connect by URL.
-- **Disconnecting further:** revoking authorization, deleting the remote.
+- **Revoking the whole GitHub authorization:** it needs the OAuth app's client secret; only this device's tokens are
+  revoked.
 - **Registered projects** in the backup.

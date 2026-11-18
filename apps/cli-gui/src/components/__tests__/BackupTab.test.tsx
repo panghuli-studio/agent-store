@@ -259,6 +259,7 @@ test('disconnecting confirms that only this machine is disconnected', async () =
     getBackupStatus: () => status,
     disconnectBackup: () => {
       status = empty
+      return { level: 'device', remote: '/srv/backup.git' }
     },
   })
   renderTab()
@@ -268,6 +269,9 @@ test('disconnecting confirms that only this machine is disconnected', async () =
   expect(dialog).toHaveTextContent('本机已安装的技能、MCP 和供应商')
   fireEvent.click(within(dialog).getByRole('button', { name: '断开' }))
   await waitFor(() => expect(calls.some((c) => c.method === 'disconnectBackup')).toBe(true))
+  expect(calls.find((c) => c.method === 'disconnectBackup')?.args).toEqual([])
+  expect(await within(dialog).findByText('已断开')).toBeInTheDocument()
+  fireEvent.click(within(dialog).getByRole('button', { name: '完成' }))
   expect(await screen.findByRole('button', { name: '连接仓库…' })).toBeInTheDocument()
 })
 
