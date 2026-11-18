@@ -152,6 +152,8 @@ run_variant() {
 run_variant plain-en plain en
 run_variant plain-zh plain zh
 run_variant wd-zh wd zh
+run_variant wd-en wd en
+run_variant wd-zh-im-simple wd zh GTK_IM_MODULE=gtk-im-context-simple
 # GTK picks an input method by locale: XIM for zh, which this container has no server for.
 run_variant plain-zh-im-simple plain zh GTK_IM_MODULE=gtk-im-context-simple
 # A desktop with an input method: IBus serving XIM, GTK still on its default (XIM) module.

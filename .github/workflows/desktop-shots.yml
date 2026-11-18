@@ -73,6 +73,12 @@ jobs:
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/disconnect-probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: disconnect-probe
+          path: out/probe/
+          retention-days: 14
       - name: Screenshots of the native window
         if: ${{ !cancelled() }}
         run: |
