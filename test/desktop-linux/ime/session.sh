@@ -28,19 +28,33 @@ gsettings set org.gnome.desktop.input-sources sources "[('ibus', 'libpinyin')]"
 # These engines initially use Latin mode; use their actual CJK modes in this HOME.
 gsettings set org.freedesktop.ibus.engine.anthy.common input-mode 0
 gsettings set org.freedesktop.ibus.engine.hangul initial-input-mode hangul
+# Use one explicitly addressed bus for Shell, GTK, the XIM bridge and the CLI.
+# `ibus list-engine` only lists installed engines; it does not prove a live bus.
+export IBUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/ibus"
+ibus-daemon --address="$IBUS_ADDRESS" --xim --panel disable >"$out/ibus.log" 2>&1 & pids+=("$!")
+for _ in {1..100}; do
+  if python3 -c 'import gi; gi.require_version("IBus", "1.0"); from gi.repository import IBus; raise SystemExit(0 if IBus.Bus.new().is_connected() else 1)'; then break; fi
+  sleep .2
+done
+python3 -c 'import gi; gi.require_version("IBus", "1.0"); from gi.repository import IBus; assert IBus.Bus.new().is_connected()'
 if [ "$mode" = wayland ]; then
   # A real GNOME compositor nested in Xvfb; screenshots sample its host surface.
-  gnome-shell --nested --wayland >"$out/gnome.log" 2>&1 & pids+=("$!")
+  gnome-shell --nested --wayland >"$out/gnome.log" 2>&1 & gnome_pid=$!; pids+=("$gnome_pid")
   export WAYLAND_DISPLAY=wayland-0 GDK_BACKEND=wayland
   for _ in {1..100}; do [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && break; sleep .2; done
   test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
 elif [ "$mode" = x11 ]; then
-  gnome-shell --x11 >"$out/gnome.log" 2>&1 & pids+=("$!")
+  gnome-shell --x11 >"$out/gnome.log" 2>&1 & gnome_pid=$!; pids+=("$gnome_pid")
 fi
 if [ "$mode" != wayland ]; then export GDK_BACKEND=x11; fi
-sleep 5
 if [ "$mode" != bare ]; then
-  kill -0 "${pids[1]}"
+  for _ in {1..100}; do
+    grep -q 'GNOME Shell started' "$out/gnome.log" && break
+    kill -0 "$gnome_pid"
+    sleep .2
+  done
+  grep -q 'GNOME Shell started' "$out/gnome.log"
+  kill -0 "$gnome_pid"
   # Close the initial overview before any engine-backed application gets focus.
   xdotool key Escape Escape
 fi
@@ -50,12 +64,8 @@ case "$rendering" in
   dmabuf-off) export WEBKIT_DISABLE_DMABUF_RENDERER=1 ;;
 esac
 { env | sort | grep -E '^(LANG|LC_|DISPLAY|WAYLAND|GDK_|GTK_|XMODIFIERS|WEBKIT_|LIBGL_)' || true; glxinfo -B; } >"$out/rendering.txt" 2>&1
-# GNOME starts and owns its IBus daemon (including XIM on X11). Replacing it
-# leaves Shell and its XIM bridge attached to different bus instances.
-if [ "$mode" = bare ]; then
-  ibus-daemon --xim >"$out/ibus.log" 2>&1 & pids+=("$!")
-fi
-for _ in {1..50}; do ibus list-engine >"$out/engines.txt" 2>/dev/null && break; sleep .2; done
+ibus list-engine >"$out/engines.txt"
+ibus address >"$out/ibus-address.txt"
 export XMODIFIERS=@im=ibus
 for language in zh ja ko; do
   case "$language" in

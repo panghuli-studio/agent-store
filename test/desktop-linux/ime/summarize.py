@@ -13,7 +13,7 @@ for path in sorted(out.glob('*.jsonl')):
     inputs = [event['page'] for event in events if event['page']['kind'] == 'input']
     text = inputs[-1]['text'] if inputs else ''
     composed = any(event['page']['kind'] == 'compositionend' for event in events)
-    cjk = bool(re.search(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]', text))
+    cjk = composed and bool(re.search(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]', text))
     frames = []
     for stamp in sorted(out.glob(path.stem + '-[123].time')):
         at = float(stamp.read_text())
@@ -41,5 +41,5 @@ for path in sorted(out.glob('*package-1.json')):
     inputs = [event.get('text', '') for event in data.get('events', []) if event['kind'] == 'input']
     packages.append({'case': path.stem, 'focused': data.get('focused'),
                      'palette': data.get('palette'), 'text': data.get('text'),
-                     'cjk_commit': any(re.search(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]', text) for text in inputs)})
+                     'cjk_commit': any(e['kind'] == 'compositionend' for e in data.get('events', [])) and any(re.search(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]', text) for text in inputs)})
 (out / 'package-summary.json').write_text(json.dumps(packages, ensure_ascii=False, indent=2))
