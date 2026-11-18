@@ -190,6 +190,8 @@ test('in English', async () => {
   try { localStorage.setItem('as-locale', 'en') } catch { /* ignore */ }
   mockRpc(viaGitHub)
   const dialog = await openDisconnect('Disconnect…')
+  expect(within(dialog).getByText('Will do')).toBeInTheDocument()
+  expect(within(dialog).queryByText('Done')).toBeNull()
   expect(within(dialog).getByRole('radio', { name: /This computer only/ })).toBeChecked()
   fireEvent.click(within(dialog).getByRole('radio', { name: /Delete the remote repository/ }))
   expect(within(dialog).getByLabelText(`Type the repository name, ${REPO}, to confirm`)).toBeInTheDocument()

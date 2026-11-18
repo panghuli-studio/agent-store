@@ -550,7 +550,7 @@ export const backupEn: Dict = {
     discDelete: 'Delete the remote repository',
     discDeleteD: 'Deletes {0} and every backup commit in it on GitHub, then revokes and disconnects here. It cannot be undone.',
     discNotGithub: 'This connection was made with a Git URL: Agent Store holds no GitHub authorization to revoke, and does not delete a repository it was not connected to by a GitHub sign-in. To do either, revoke the token and delete the repository on your Git host.',
-    discWill: 'Done',
+    discWill: 'Will do',
     discWillLocal: '~/.agent-store/backup/ on this computer is deleted: its copy of the backup, the snapshots and the stored token',
     discWillRevoke: 'This computer’s token is revoked on GitHub; GitHub emails you that it was revoked',
     discWillSignIn: 'You sign in with GitHub once more to grant the delete_repo scope, used for this deletion only',
