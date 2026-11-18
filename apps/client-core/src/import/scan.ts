@@ -230,8 +230,9 @@ async function matchSkill(catalog: Catalog, f: FoundSkill): Promise<CatalogMatch
   let loose: CatalogMatch | undefined
   for (const r of result.resources.filter(r => names.has(lower(r.name))).slice(0, 3)) {
     const d = await catalog.get(r.id) as SkillResourceDetail
-    const files = d.files ?? []
-    const exact = files.length === f.blobs.size && files.every(file => f.blobs.get(file.path) === file.sha)
+    // Local files are compared by git blob sha, which only GitHub skills list; a hosted skill matches by name alone.
+    const files = d.hosted ? [] : d.files ?? []
+    const exact = files.length > 0 && files.length === f.blobs.size && files.every(file => f.blobs.get(file.path) === file.sha)
     // Same version string install would record (catalog/to-item.ts), so an update check starts level.
     const match = { id: d.id, name: d.name, version: d.version ?? d.origin.upstreamVersion ?? '0.0.0', exact }
     if (exact) return match

@@ -1,5 +1,5 @@
 export type { Publisher } from './publisher'
-export type { JsonSchema, InstallHook, BaseItem, ProviderItem, SkillItem, SkillSource, MCPItem, StdioMCPItem, RemoteMCPItem, Item } from './items'
+export type { JsonSchema, InstallHook, BaseItem, ProviderItem, SkillItem, SkillSource, HostedSkillSource, MCPItem, StdioMCPItem, RemoteMCPItem, Item } from './items'
 export type {
   ToolTarget,
   Paths,
@@ -78,6 +78,10 @@ export type {
   McpRemote,
   McpResourceDetail,
   SkillFile,
+  SkillHostSite,
+  HostedSkillFile,
+  GitHubSkillResourceDetail,
+  HostedSkillResourceDetail,
   SkillResourceDetail,
   ProviderConnection,
   ProviderResourceDetail,

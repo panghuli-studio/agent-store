@@ -313,8 +313,15 @@ export class SearchSupplement {
     return this.o.store.export(this.now().toISOString())
   }
 
-  /** The catalog id of the skill a key names, when the catalog holds it; only GitHub skills can be in it. */
+  /**
+   * The catalog id of the skill a key names, when the catalog holds it: a GitHub skill,
+   * or a skill ClawHub or SkillHub hosts, whose id is its key in lowercase.
+   */
   private catalogId(skillKey: string): string | null {
+    if (/^(clawhub|skillhub):/.test(skillKey)) {
+      const id = skillKey.toLowerCase()
+      return this.o.reader.has(id) ? id : null
+    }
     const m = /^github:([^/]+\/[^/]+)\/(.+)$/.exec(skillKey)
     return m ? this.o.reader.skillId(m[1]!, m[2]!) : null
   }
@@ -363,9 +370,12 @@ export class SearchSupplement {
     }
     const shown = byRelevance(kept, (r) => r.summary.name, (r) => r.skillKey).slice(0, this.c.maxResults)
     const foundOn: Record<string, ExternalSite[]> = {}
+    const sitesOfKey = new Map<string, Set<ExternalSite>>()
+    for (const l of listings) sitesOfKey.set(l.key.toLowerCase(), (sitesOfKey.get(l.key.toLowerCase()) ?? new Set()).add(l.site))
     for (const r of shown) {
       const repo = /^github:([^/]+\/[^/]+)\//.exec(r.skillKey)?.[1]
-      const sites = repo ? sitesOfRepo.get(repo.toLowerCase()) : undefined
+      // A hosted skill was found on the sites listing it; a GitHub skill on those listing its repo.
+      const sites = repo ? sitesOfRepo.get(repo.toLowerCase()) : sitesOfKey.get(r.skillKey.toLowerCase())
       if (sites?.size) foundOn[r.summary.id] = [...sites].sort()
     }
     return {

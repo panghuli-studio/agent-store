@@ -2,8 +2,9 @@
 // that serves them (search by name/id substring, kind filter, paging).
 import type {
   McpPackage, McpRemote, McpResourceDetail, ProviderResourceDetail, ResourceDetail, ResourceOrigin,
-  SkillFile, SkillResourceDetail,
+  GitHubSkillResourceDetail, HostedSkillFile, HostedSkillResourceDetail, SkillFile, SkillHostSite, SkillResourceDetail,
 } from '@as/types'
+import { createHash } from 'crypto'
 
 const origin = (site: ResourceOrigin['site'], upstreamId: string): ResourceOrigin => ({
   site, upstreamId, url: null, upstreamVersion: null, upstreamUpdatedAt: '2026-11-12T00:00:00Z',
@@ -38,7 +39,7 @@ export function mcpResource(upstreamId: string, parts: { packages?: McpPackage[]
 
 export const SKILL_COMMIT = 'c'.repeat(40)
 
-export function skillResource(upstreamId: string, files: Record<string, string>, overrides: Partial<SkillResourceDetail> = {}): SkillResourceDetail {
+export function skillResource(upstreamId: string, files: Record<string, string>, overrides: Partial<GitHubSkillResourceDetail> = {}): GitHubSkillResourceDetail {
   const [owner, repo, ...rest] = upstreamId.split('/')
   const dir = `skills/${rest.join('/')}`
   const list: SkillFile[] = Object.entries(files).map(([path, body]) => ({
@@ -49,6 +50,25 @@ export function skillResource(upstreamId: string, files: Record<string, string>,
     ...summary('skill', 'github', upstreamId), kind: 'skill', version: 'tree123',
     repo: { fullName: `${owner}/${repo}`, ref: 'main', commit: SKILL_COMMIT, dir, treeSha: 't'.repeat(40), url: '' },
     frontmatter: {}, files: list, archiveUrl: `https://codeload.github.com/${owner}/${repo}/tar.gz/${SKILL_COMMIT}`,
+    ...overrides,
+  }
+}
+
+/** A skill ClawHub or SkillHub hosts, its files listed with their real size and SHA-256. */
+export function hostedSkillResource(site: SkillHostSite, listingId: string, files: Record<string, string>, overrides: Partial<HostedSkillResourceDetail> = {}): HostedSkillResourceDetail {
+  const [owner, slug] = listingId.split('/') as [string, string]
+  const version = '1.0.0'
+  const list: HostedSkillFile[] = Object.entries(files).map(([path, body]) => ({
+    path, size: Buffer.byteLength(body), sha256: createHash('sha256').update(body).digest('hex'),
+    downloadUrl: site === 'clawhub'
+      ? `https://clawhub.ai/api/v1/skills/${slug}/file?ownerHandle=${owner}&version=${version}&path=${encodeURIComponent(path)}`
+      : `https://api.skillhub.cn/api/v1/skills/${slug}/file?version=${version}&path=${encodeURIComponent(path)}`,
+  }))
+  const url = site === 'clawhub' ? `https://clawhub.ai/${owner}/skills/${slug}` : `https://skillhub.cn/skills/${slug}`
+  return {
+    ...summary('skill', site, listingId), kind: 'skill', version,
+    hosted: { site, listingId, slug, owner: site === 'clawhub' ? owner : null, version, url },
+    frontmatter: {}, files: list,
     ...overrides,
   }
 }

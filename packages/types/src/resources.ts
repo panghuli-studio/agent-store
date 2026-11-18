@@ -8,8 +8,11 @@ import type { ToolTarget } from './engine'
 
 export type ResourceKind = 'skill' | 'mcp' | 'provider'
 
-/** The site a record was scraped from; also the prefix of its id. */
-export type ResourceSite = 'mcp-registry' | 'github' | 'builtin'
+/**
+ * The site a record was scraped from; also the prefix of its id. `clawhub` and
+ * `skillhub` hold skills those sites host themselves, with no GitHub repo behind them.
+ */
+export type ResourceSite = 'mcp-registry' | 'github' | 'builtin' | 'clawhub' | 'skillhub'
 
 export interface ResourceAuthor {
   name: string
@@ -41,7 +44,7 @@ export interface ResourceSummary {
   author: ResourceAuthor | null
   version: string | null
   homepageUrl: string | null
-  /** skills.sh install count; null where the source has none. */
+  /** skills.sh install count, or for a hosted skill the installs its site reports; null where the source has none. */
   installs: number | null
   /**
    * GitHub stars of the repo behind the record: an MCP server's `repository`, a
@@ -59,6 +62,9 @@ export interface ResourceSummary {
   transports: string[]
   origin: ResourceOrigin
 }
+
+/** Sites that host skill files themselves (see HostedSkillResourceDetail). */
+export type SkillHostSite = 'clawhub' | 'skillhub'
 
 /**
  * `default`: installs first, then verified, then most recently updated; for `kind=mcp`
@@ -221,7 +227,14 @@ export interface McpResourceDetail extends ResourceSummary {
   remotes: McpRemote[]
 }
 
-// ── Skill (a GitHub directory holding SKILL.md) ──────────────────────────────
+// ── Skill ─────────────────────────────────────────────────────────────────────
+//
+// Two formats, told apart by which of `repo` and `hosted` is set:
+// - GitHubSkillResourceDetail: a GitHub directory holding SKILL.md, pinned to a commit.
+// - HostedSkillResourceDetail: a skill ClawHub or SkillHub hosts itself, pinned to a
+//   published version. Each file names its download URL on that site and the SHA-256
+//   and size the site published for it; a client installs only when every downloaded
+//   file matches both.
 
 export interface SkillFile {
   /** Relative to the skill directory. */
@@ -237,8 +250,13 @@ export interface SkillFile {
   downloadUrl: string
 }
 
-export interface SkillResourceDetail extends ResourceSummary {
+interface SkillDetailBase extends ResourceSummary {
   kind: 'skill'
+  /** The parsed YAML frontmatter of SKILL.md, as written. */
+  frontmatter: Record<string, unknown>
+}
+
+export interface GitHubSkillResourceDetail extends SkillDetailBase {
   repo: {
     /** GitHub `owner/repo` */
     fullName: string
@@ -253,13 +271,48 @@ export interface SkillResourceDetail extends ResourceSummary {
     /** Browsable URL of the directory at `commit`. */
     url: string
   }
-  /** The parsed YAML frontmatter of SKILL.md, as written. */
-  frontmatter: Record<string, unknown>
+  hosted?: undefined
   /** Every file under `repo.dir`, SKILL.md included. Git submodules are left out. */
   files: SkillFile[]
   /** codeload tarball of the whole repo at `repo.commit`; the skill sits under `<top-level dir>/<repo.dir>`. */
   archiveUrl: string
 }
+
+/** One file of a hosted skill version. Hosted skills have regular files only. */
+export interface HostedSkillFile {
+  /** Relative to the skill directory; '/'-separated, no '.' or '..' segments. */
+  path: string
+  /** Bytes, as the site published them. */
+  size: number
+  /** Lowercase hex SHA-256 of the file's bytes, as the site published them. */
+  sha256: string
+  /** https URL on the site that serves this file of `hosted.version` (it may redirect to the site's storage). */
+  downloadUrl: string
+}
+
+export interface HostedSkillResourceDetail extends SkillDetailBase {
+  repo?: undefined
+  hosted: {
+    site: SkillHostSite
+    /**
+     * The skill on that site: ClawHub `<owner>/<slug>` (slugs repeat across owners),
+     * SkillHub `<namespace>/<slug>` (the slug alone is unique there).
+     */
+    listingId: string
+    /** The site's slug, the key its file API takes. */
+    slug: string
+    /** ClawHub's owner handle; null on SkillHub. */
+    owner: string | null
+    /** The published version the files below belong to. */
+    version: string
+    /** The canonical listing on the site; link users there. */
+    url: string
+  }
+  /** Every file of the version, SKILL.md included. */
+  files: HostedSkillFile[]
+}
+
+export type SkillResourceDetail = GitHubSkillResourceDetail | HostedSkillResourceDetail
 
 // ── Provider (built into the API) ─────────────────────────────────────────────
 

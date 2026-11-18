@@ -74,7 +74,8 @@ export function ItemDetail({ resource: r, title, readme, layout = 'page' }: Item
     if (r.transports.length > 0) specs.push({ label: t('detail.transport'), value: r.transports.join(', ') })
   }
   if (r.kind === 'skill') {
-    specs.push({ label: t('detail.repository'), value: r.repo.fullName, href: `https://github.com/${r.repo.fullName}` })
+    // A hosted skill has no repository; its canonical listing is the homepage below.
+    if (r.repo) specs.push({ label: t('detail.repository'), value: r.repo.fullName, href: `https://github.com/${r.repo.fullName}` })
     specs.push({ label: t('detail.files'), value: t('detail.fileCount', { count: r.files.length }) })
   }
   if (r.kind === 'provider') {
@@ -214,8 +215,8 @@ function SkillFiles({ files }: { files: Extract<ResourceDetail, { kind: 'skill' 
         {shown.map((f) => (
           <li key={f.path} className="flex gap-3 border-t border-dashed border-line first:border-t-0">
             <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{f.path}</span>
-            {f.mode === '100755' && <span className="shrink-0 text-warn">{t('executable')}</span>}
-            {f.type === 'symlink' && <span className="shrink-0 text-warn">{t('symlink')}</span>}
+            {'mode' in f && f.mode === '100755' && <span className="shrink-0 text-warn">{t('executable')}</span>}
+            {'type' in f && f.type === 'symlink' && <span className="shrink-0 text-warn">{t('symlink')}</span>}
           </li>
         ))}
         {files.length > FILES_SHOWN && (

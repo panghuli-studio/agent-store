@@ -4,8 +4,8 @@ import type { ResourceKind } from '@as/types'
 import { countAvailable, getMeta, setMeta, CATALOG_SCHEMA_VERSION } from './db'
 import { encodeDetail } from './detail-codec'
 import {
-  applySearchFinds, beginRun, discoveryTotals, linkResources, pickRepos, pruneSnapshots, recordAttempts, runDiscovery, seedRepos,
-  skillsShInstalls, type DiscoveryReport, type DiscoverySource, type SearchFindsReport,
+  applySearchFinds, beginRun, discoveryTotals, linkResources, pickHosted, pickRepos, pruneSnapshots, recordAttempts, recordHostedChecks,
+  runDiscovery, seedRepos, skillsShInstalls, type DiscoveryReport, type HostedQueueReport, type DiscoverySource, type SearchFindsReport,
 } from './discovery'
 import { describeError, upstreamClient } from './http'
 import { refreshStars, type StarsOptions, type StarsReport } from './stars'
@@ -52,6 +52,8 @@ export interface SyncOptions {
     db: Database
     sources: DiscoverySource[]
     repoBudget?: number
+    /** Hosted (ClawHub- or SkillHub-only) skills read per site per run. */
+    hostedBudget?: number
     httpRetries?: number
     /** The API's GET /api/discovery/export: what search lookups found, taken into the listings and the repo queue. */
     findsUrl?: string
@@ -158,6 +160,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
 
   let discovery: DiscoveryReport | undefined
   let skills: SourceContext['skills']
+  let hosted: SourceContext['hosted']
   const d = options.discovery
   if (d) {
     const runId = beginRun(d.db, startedAt)
@@ -180,8 +183,15 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
     seedRepos(d.db, scopes, startedAt)
     const picked = pickRepos(d.db, d.repoBudget ?? 200)
     skills = { repos: picked.repos, installs: skillsShInstalls(d.db) }
+    hosted = []
+    const hostedQueue: Record<string, HostedQueueReport> = {}
+    for (const site of ['clawhub', 'skillhub'] as const) {
+      const p = pickHosted(d.db, site, d.hostedBudget ?? 100)
+      hosted.push(...p.candidates)
+      hostedQueue[site] = p.report
+    }
     discovery = {
-      runId, sources, ...(searchFinds ? { searchFinds } : {}), queue: picked.report, listings: 0, skills: 0, crossSite: 0, linkedResources: 0, snapshots: 0, prunedSnapshots: 0,
+      runId, sources, ...(searchFinds ? { searchFinds } : {}), queue: picked.report, hostedQueue, listings: 0, skills: 0, crossSite: 0, linkedResources: 0, snapshots: 0, prunedSnapshots: 0,
     }
     log(`discovery: ${picked.report.pickedNew} new and ${picked.report.pickedKnown} known repos queued, ${picked.report.waitingNew} new waiting`)
   }
@@ -205,6 +215,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
         full: options.full ?? false,
         state: { watermark: getMeta(db, watermarkKey(source.name)), knownScopes },
         ...(skills ? { skills } : {}),
+        ...(hosted ? { hosted } : {}),
         log,
       })
       report.mode = run.coverage.mode
@@ -216,6 +227,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
       const stamp = now().toISOString()
       db.transaction(() => applyRun(db, source, run, stamp, report))()
       if (d && run.attempted) recordAttempts(d.db, run.attempted, stamp)
+      if (d && run.hostedChecks) recordHostedChecks(d.db, run.hostedChecks, stamp)
     } catch (e) {
       report.status = 'failed'
       report.errors.push(e instanceof Error ? e.message : String(e))
@@ -279,6 +291,8 @@ export function formatReportMarkdown(report: SyncReport, extra: string[] = []): 
         ? [`- repo queue: ${q.pickedNew} new + ${q.pickedKnown} known of a budget of ${q.budget}; ${q.waitingNew} new still waiting, ` +
             `${q.known} known, oldest attempt ${q.oldestAttemptAt ?? '-'}`]
         : []),
+      ...Object.entries(disc.hostedQueue ?? {}).map(([site, h]) =>
+        `- ${site} hosted skills: ${h.pickedNew} new + ${h.pickedChanged} changed + ${h.pickedKnown} known of a budget of ${h.budget}; ${h.waitingNew} new still waiting`),
       ...(disc.searchFinds
         ? [disc.searchFinds.status === 'ok'
             ? `- search finds: ${disc.searchFinds.listings} listings (${disc.searchFinds.newListings} new), ` +

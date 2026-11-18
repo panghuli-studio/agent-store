@@ -114,6 +114,7 @@ export function skillhubSource(options: SkillHubOptions = {}): DiscoverySource {
     ) as Observation['metrics']
     run.observations.push({
       ...identity,
+      version: str(item['version']),
       board,
       rank,
       metrics,

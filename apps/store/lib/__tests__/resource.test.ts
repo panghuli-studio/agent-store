@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import type { McpResourceDetail } from '@as/types'
-import { mcpResource, providerResource, skillResource, summary } from '../../components/__tests__/fixtures'
+import { hostedSkillResource, mcpResource, providerResource, skillResource, summary } from '../../components/__tests__/fixtures'
 import {
   desktopSlug,
   idFromSegments,
@@ -93,4 +93,11 @@ test('listings show the first whole sentence', () => {
     'OpenRouter：一个 API Key 访问 300+ 模型（OpenAI 兼容）。'
   )
   expect(leadSentence('')).toBe('')
+})
+
+test('a skill ClawHub or SkillHub hosts installs with aas and runs from its listing', () => {
+  expect(installCommand(summary(hostedSkillResource))).toBe('aas install clawhub:ivangdavila/terraform')
+  expect(runEntries(hostedSkillResource)).toEqual([
+    { kind: 'files', value: 'ivangdavila/terraform@1.0.4', href: 'https://clawhub.ai/ivangdavila/skills/terraform' },
+  ])
 })

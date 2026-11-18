@@ -1,6 +1,6 @@
 import type { Publisher } from './publisher'
 import type { ToolTarget } from './engine'
-import type { SkillFile } from './resources'
+import type { HostedSkillFile, SkillFile, SkillHostSite } from './resources'
 
 export type JsonSchema = Record<string, unknown>
 
@@ -26,7 +26,7 @@ export interface BaseItem {
   installHook: InstallHook
   createdAt: string
   updatedAt: string
-  /** Catalog id (`mcp-registry:…`, `github:…`, `builtin:…`) for items built from /api/resources. */
+  /** Catalog id (`mcp-registry:…`, `github:…`, `clawhub:…`, `skillhub:…`, `builtin:…`) for items built from /api/resources. */
   resourceId?: string
 }
 
@@ -46,6 +46,20 @@ export interface SkillSource {
   dir: string
 }
 
+/**
+ * A skill ClawHub or SkillHub hosts: one published version's files. Each download must
+ * match the size and SHA-256 the site published, or nothing is installed.
+ */
+export interface HostedSkillSource {
+  site: SkillHostSite
+  /** ClawHub `<owner>/<slug>`, SkillHub `<namespace>/<slug>`. */
+  listingId: string
+  version: string
+  /** The canonical listing on the site. */
+  url: string
+  files: HostedSkillFile[]
+}
+
 export interface SkillItem extends BaseItem {
   category: 'skill'
   /** Download URL for the installable skill file (distinct from readmeUrl) */
@@ -54,6 +68,8 @@ export interface SkillItem extends BaseItem {
   source?: SkillSource
   /** Every file of that directory at `source.ref`, from the catalog; fetched one by one instead of the repo tarball. */
   files?: SkillFile[]
+  /** Set instead of `source` for a skill hosted on ClawHub or SkillHub. */
+  hosted?: HostedSkillSource
 }
 
 interface BaseMCPItem extends BaseItem {

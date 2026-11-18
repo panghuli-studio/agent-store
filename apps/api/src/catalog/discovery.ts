@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import type { KyInstance } from 'ky'
 import { githubRepoOf } from './stars'
+import type { HostedCandidate, HostedCheck } from './types'
 
 // discovery.db: what the skill directories list, with dated popularity snapshots and
 // the queue of GitHub repos to scan. It is a separate file from catalog.db because
@@ -59,6 +60,15 @@ const MIGRATIONS: string[] = [
     last_status     TEXT
   );
   `,
+  `
+  -- version: the latest version the site lists. content_*: the last time the catalog
+  -- sync read a hosted (ClawHub- or SkillHub-only) skill's files, the version read and
+  -- how it went (ok, excluded: <reason>, error).
+  ALTER TABLE listings ADD COLUMN version TEXT;
+  ALTER TABLE listings ADD COLUMN content_checked_at TEXT;
+  ALTER TABLE listings ADD COLUMN content_version TEXT;
+  ALTER TABLE listings ADD COLUMN content_status TEXT;
+  `,
 ]
 
 /** Snapshots older than this are dropped; listings and repos are kept for good. */
@@ -102,6 +112,8 @@ export interface Observation {
   name: string
   url: string
   githubRepo: string | null
+  /** The latest version the site lists, when it says. */
+  version?: string | null
   /** The board this was read from, or null for a directory page (no snapshot). */
   board: string | null
   rank: number | null
@@ -199,6 +211,8 @@ export interface DiscoveryReport {
   snapshots: number
   prunedSnapshots: number
   queue?: RepoQueueReport
+  /** Hosted skills picked for the clawhub-skills and skillhub-skills sources, by site. */
+  hostedQueue?: Record<string, HostedQueueReport>
 }
 
 const stateKey = (source: string, key: string) => `source:${source}:state:${key}`
@@ -218,9 +232,10 @@ const EXAMPLES = 10
 /** Writes one source's observations. Nothing is removed: a site not listing a skill says nothing about the skill. */
 export function applyDiscovery(db: Database, source: string, run: DiscoveryRun, runId: number, stamp: string, report: DiscoverySourceReport): void {
   const select = db.query('SELECT id, metrics FROM listings WHERE source = ? AND listing_id = ?')
-  const insert = db.query(`INSERT INTO listings (source, listing_id, skill_key, name, url, github_repo, metrics, first_seen_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-  const update = db.query('UPDATE listings SET skill_key = ?, name = ?, url = ?, github_repo = ?, metrics = ?, last_seen_at = ? WHERE id = ?')
+  const insert = db.query(`INSERT INTO listings (source, listing_id, skill_key, name, url, github_repo, version, metrics, first_seen_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const update = db.query(`UPDATE listings SET skill_key = ?, name = ?, url = ?, github_repo = ?, version = coalesce(?, version), metrics = ?,
+    last_seen_at = ? WHERE id = ?`)
   const snap = db.query('INSERT OR IGNORE INTO snapshots (listing, board, metric, run_id, rank, value) VALUES (?, ?, ?, ?, ?, ?)')
   const onBoardBefore = db.query('SELECT 1 FROM snapshots WHERE listing = ? AND run_id < ? LIMIT 1')
   const prevRank = db.query('SELECT rank FROM snapshots WHERE listing = ? AND board = ? AND run_id < ? AND rank IS NOT NULL ORDER BY run_id DESC LIMIT 1')
@@ -234,13 +249,13 @@ export function applyDiscovery(db: Database, source: string, run: DiscoveryRun, 
     const existing = select.get(source, o.listingId) as { id: number; metrics: string } | null
     let id: number
     if (!existing) {
-      id = Number(insert.run(source, o.listingId, o.skillKey, o.name, o.url, o.githubRepo, JSON.stringify(o.metrics), stamp, stamp).lastInsertRowid)
+      id = Number(insert.run(source, o.listingId, o.skillKey, o.name, o.url, o.githubRepo, o.version ?? null, JSON.stringify(o.metrics), stamp, stamp).lastInsertRowid)
       report.added++
     } else {
       id = existing.id
       const before = JSON.parse(existing.metrics) as Record<string, number>
       const changed = Object.entries(o.metrics).some(([k, v]) => before[k] !== v)
-      update.run(o.skillKey, o.name, o.url, o.githubRepo, JSON.stringify({ ...before, ...o.metrics }), stamp, id)
+      update.run(o.skillKey, o.name, o.url, o.githubRepo, o.version ?? null, JSON.stringify({ ...before, ...o.metrics }), stamp, id)
       // A listing seen on two boards in one run counts once.
       if (!seen.has(id)) {
         if (changed) report.updated++
@@ -411,6 +426,64 @@ export function recordAttempts(db: Database, attempted: Array<{ repo: string; st
   })()
 }
 
+export interface HostedQueueReport {
+  budget: number
+  /** Never read before. */
+  pickedNew: number
+  /** The site lists a version other than the one last read. */
+  pickedChanged: number
+  /** Read longest ago, to notice removals and moderation. */
+  pickedKnown: number
+  waitingNew: number
+}
+
+/**
+ * Skills one site hosts itself and no other site places on GitHub: listings of that
+ * site whose skill key is the site's own (a SkillHub mirror of ClawHub is keyed to
+ * ClawHub), with no listing of the same key naming a GitHub repo.
+ */
+const HOSTED_ONLY = `l.source = ? AND substr(l.skill_key, 1, length(l.source) + 1) = l.source || ':'
+  AND NOT EXISTS (SELECT 1 FROM listings o WHERE o.skill_key = l.skill_key AND o.github_repo IS NOT NULL)`
+
+/**
+ * This run's hosted skills of one site: never read first (most downloaded first), then
+ * those whose listed version changed, then the rest read longest ago, `budget` in all;
+ * a quarter of the budget is kept for the last group when it has any.
+ */
+export function pickHosted(db: Database, site: 'clawhub' | 'skillhub', budget: number): { candidates: HostedCandidate[]; report: HostedQueueReport } {
+  type Row = { listing_id: string; installs: number | null }
+  const cols = "l.listing_id, json_extract(l.metrics, '$.installs_reported') AS installs"
+  const popular = "coalesce(json_extract(l.metrics, '$.downloads_total'), 0) DESC, l.listing_id"
+  const fresh = db.query(`SELECT ${cols} FROM listings l WHERE ${HOSTED_ONLY} AND l.content_checked_at IS NULL ORDER BY ${popular}`).all(site) as Row[]
+  const changed = db.query(`SELECT ${cols} FROM listings l WHERE ${HOSTED_ONLY} AND l.content_checked_at IS NOT NULL
+    AND l.version IS NOT NULL AND l.version IS NOT l.content_version ORDER BY l.content_checked_at, l.listing_id`).all(site) as Row[]
+  const known = db.query(`SELECT ${cols} FROM listings l WHERE ${HOSTED_ONLY} AND l.content_checked_at IS NOT NULL
+    AND (l.version IS NULL OR l.version IS l.content_version) ORDER BY l.content_checked_at, l.listing_id`).all(site) as Row[]
+  const knownSlots = Math.min(known.length, Math.max(Math.floor(budget / 4), budget - fresh.length - changed.length))
+  const freshSlots = Math.min(fresh.length, budget - knownSlots)
+  const changedSlots = Math.min(changed.length, budget - knownSlots - freshSlots)
+  const extra = Math.min(known.length - knownSlots, budget - knownSlots - freshSlots - changedSlots)
+  const picked = [...fresh.slice(0, freshSlots), ...changed.slice(0, changedSlots), ...known.slice(0, knownSlots + extra)]
+  return {
+    candidates: picked.map((r) => ({ site, listingId: r.listing_id, installs: typeof r.installs === 'number' && r.installs > 0 ? r.installs : null })),
+    report: { budget, pickedNew: freshSlots, pickedChanged: changedSlots, pickedKnown: knownSlots + extra, waitingNew: fresh.length - freshSlots },
+  }
+}
+
+/**
+ * Records what a hosted-skills source read. An entry left out counts as read at the
+ * version the site lists, so it is read again when that changes; one that failed keeps
+ * its last version and stays due.
+ */
+export function recordHostedChecks(db: Database, checks: HostedCheck[], stamp: string): void {
+  const q = db.query(`UPDATE listings SET content_checked_at = ?, content_status = ?,
+    content_version = CASE WHEN ? = 'ok' THEN ? WHEN ? LIKE 'excluded:%' THEN version ELSE content_version END
+    WHERE source = ? AND listing_id = ?`)
+  db.transaction(() => {
+    for (const c of checks) q.run(stamp, c.status, c.status, c.version, c.status, c.site, c.listingId)
+  })()
+}
+
 /** `owner/repo/skill` (lowercase) → latest all-time installs on skills.sh. */
 export function skillsShInstalls(db: Database): Map<string, number> {
   const rows = db.query(`SELECT listing_id, json_extract(metrics, '$.installs_total') AS n FROM listings
@@ -435,9 +508,19 @@ export function linkResources(db: Database, catalog: Database): number {
   for (const r of rows) byKey.set(`${r.scope}/${r.name.toLowerCase()}`, r.id)
   const listings = db.query("SELECT id, skill_key, resource_id FROM listings WHERE skill_key LIKE 'github:%'").all() as
     { id: number; skill_key: string; resource_id: string | null }[]
+  // A hosted skill's catalog id is its skill key, lowercased.
+  const hosted = new Set((catalog.query("SELECT id FROM resources WHERE kind = 'skill' AND site IN ('clawhub', 'skillhub')").all() as { id: string }[]).map((r) => r.id))
+  const hostedListings = db.query("SELECT id, skill_key, resource_id FROM listings WHERE skill_key LIKE 'clawhub:%' OR skill_key LIKE 'skillhub:%'").all() as
+    { id: number; skill_key: string; resource_id: string | null }[]
   const set = db.query('UPDATE listings SET resource_id = ? WHERE id = ?')
   let linked = 0
   db.transaction(() => {
+    for (const l of hostedListings) {
+      const key = l.skill_key.toLowerCase()
+      const rid = hosted.has(key) ? key : null
+      if (rid) linked++
+      if (rid !== l.resource_id) set.run(rid, l.id)
+    }
     for (const l of listings) {
       const rid = byKey.get(l.skill_key.slice('github:'.length)) ?? null
       if (rid) linked++

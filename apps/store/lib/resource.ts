@@ -179,12 +179,15 @@ export function mcpCommand(r: McpResourceDetail): string | null {
 /**
  * An install command for what the data supports, or null (an MCP summary does
  * not carry its packages; the detail does).
- * - skill: the skills.sh CLI, which reads the GitHub repo
+ * - skill: the skills.sh CLI, which reads the GitHub repo; for a skill ClawHub or
+ *   SkillHub hosts, the Agent Store CLI, which checks each file's SHA-256
  * - mcp: `claude mcp add`
  * - provider: the Agent Store CLI, whose built-in providers share these slugs
  */
 export function installCommand(r: ResourceSummary | ResourceDetail): string | null {
   if (r.kind === 'skill') {
+    // A skill ClawHub or SkillHub hosts has no GitHub repo for skills.sh to read.
+    if (r.origin.site === 'clawhub' || r.origin.site === 'skillhub') return `aas install ${r.id}`
     const parts = skillParts(r.origin.upstreamId)
     return parts ? `npx skills add ${parts.repo} --skill ${quote(parts.name)}` : null
   }
@@ -222,6 +225,8 @@ export function runEntries(r: ResourceDetail): RunEntry[] {
       const needs = neededInputs(remote.headers)
       if (needs.length) entries.push({ kind: 'needs', value: needs.join(', ') })
     }
+  } else if (r.kind === 'skill' && r.hosted) {
+    entries.push({ kind: 'files', value: `${r.hosted.listingId}@${r.hosted.version}`, href: r.hosted.url })
   } else if (r.kind === 'skill') {
     entries.push({ kind: 'files', value: `${r.repo.fullName}${r.repo.dir ? `/${r.repo.dir}` : ''}`, href: r.repo.url })
   } else if (r.connection) {

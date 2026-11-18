@@ -31,6 +31,13 @@ test('a web store link installs by its catalog id; the slug is kept only for dis
   })
 })
 
+test('a skill ClawHub or SkillHub hosts installs by its catalog id too', () => {
+  expect(routeDeepLink('agent-store://install?category=skill&id=clawhub%3Aivangdavila%2Fterraform')).toEqual({
+    kind: 'install', ref: 'clawhub:ivangdavila/terraform', category: 'skill',
+  })
+  expect(routeDeepLink('agent-store://install?id=skillhub%3Aake%2Fdev-god')).toEqual({ kind: 'install', ref: 'skillhub:ake/dev-god' })
+})
+
 test('an id that is not a catalog id is refused, even next to a good slug', () => {
   for (const id of ['evil:x', 'github:a b', 'builtin:', `github:${'a'.repeat(301)}`, 'github:x%0Ay']) {
     expect(routeDeepLink(`agent-store://install?slug=ok&id=${encodeURIComponent(id)}`)).toEqual({ kind: 'invalid', reason: 'slug' })

@@ -1,4 +1,6 @@
 import type {
+  GitHubSkillResourceDetail,
+  HostedSkillResourceDetail,
   McpResourceDetail,
   ProviderResourceDetail,
   ResourceOrigin,
@@ -78,7 +80,7 @@ export const mcpResource: McpResourceDetail = {
   remotes: [],
 }
 
-export const skillResource: SkillResourceDetail = {
+export const skillResource: GitHubSkillResourceDetail = {
   id: 'github:obra/superpowers/brainstorming',
   kind: 'skill',
   name: 'brainstorming',
@@ -106,6 +108,37 @@ export const skillResource: SkillResourceDetail = {
     { path: 'scripts/run.sh', type: 'file', mode: '100755', size: 10, sha: 's2', downloadUrl: 'https://raw.githubusercontent.com/obra/superpowers/abc123/skills/brainstorming/scripts/run.sh' },
   ],
   archiveUrl: 'https://codeload.github.com/obra/superpowers/tar.gz/abc123',
+}
+
+export const hostedSkillResource: HostedSkillResourceDetail = {
+  id: 'clawhub:ivangdavila/terraform',
+  kind: 'skill',
+  name: 'Terraform',
+  description: 'Writes, debugs, and refactors Terraform.',
+  author: { name: 'Iván', url: null },
+  version: '1.0.4',
+  homepageUrl: 'https://clawhub.ai/ivangdavila/skills/terraform',
+  installs: 123,
+  stars: null,
+  verified: false,
+  tags: [],
+  transports: [],
+  origin: origin('clawhub', 'ivangdavila/terraform', 'https://clawhub.ai/ivangdavila/skills/terraform'),
+  hosted: {
+    site: 'clawhub',
+    listingId: 'ivangdavila/terraform',
+    slug: 'terraform',
+    owner: 'ivangdavila',
+    version: '1.0.4',
+    url: 'https://clawhub.ai/ivangdavila/skills/terraform',
+  },
+  frontmatter: { name: 'Terraform' },
+  files: [
+    {
+      path: 'SKILL.md', size: 19174, sha256: '9d58f88d634515f9dd9ecdfa3a30b475f3e5cf764ae72b8635d1cbed4fc0962b',
+      downloadUrl: 'https://clawhub.ai/api/v1/skills/terraform/file?ownerHandle=ivangdavila&version=1.0.4&path=SKILL.md',
+    },
+  ],
 }
 
 /** The list endpoint's shape: the summary fields only. */

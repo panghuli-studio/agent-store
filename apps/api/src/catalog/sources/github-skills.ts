@@ -1,5 +1,5 @@
 import type { Octokit } from '@octokit/rest'
-import type { SkillFile, SkillResourceDetail, ResourceSummary } from '@as/types'
+import type { SkillFile, GitHubSkillResourceDetail, ResourceSummary } from '@as/types'
 import matter from 'gray-matter'
 import pMap from 'p-map'
 import { rawUrl } from '../detail-codec'
@@ -184,7 +184,7 @@ export async function scanRepo(
     const treeSha = treeShaOf.get(dir) ?? tree.sha
     const basename = dir.split('/').pop() ?? ''
     const installCount = installs.get(`${scope}/${name.toLowerCase()}`) ?? (basename ? installs.get(`${scope}/${basename.toLowerCase()}`) : undefined)
-    const detail: Omit<SkillResourceDetail, keyof ResourceSummary> = {
+    const detail: Omit<GitHubSkillResourceDetail, keyof ResourceSummary> = {
       repo: {
         fullName,
         ref: 'HEAD',

@@ -10,7 +10,7 @@ Claude Code 和 Codex 的应用商店加本地管理客户端：在网页上找�
 | 类别 | 来源 | 装到哪 |
 |---|---|---|
 | MCP 服务 | [官方 MCP Registry](https://registry.modelcontextprotocol.io) | Claude Code 和 Codex 的 MCP 配置，按包类型写成 `npx` / `uvx` / `docker` 启动命令或远程地址 |
-| 技能 | GitHub 上的技能仓库，安装量来自 skills.sh | 先下载到本机技能库 `~/.agent-store/skills/`，再链接进各工具的 `skills/` 目录，可以按工具单独开关 |
+| 技能 | GitHub 上的技能仓库，安装量来自 skills.sh；以及只在 ClawHub 或 SkillHub 托管的技能，安装时逐个核对文件的 SHA-256 | 先下载到本机技能库 `~/.agent-store/skills/`，再链接进各工具的 `skills/` 目录，可以按工具单独开关 |
 | 供应商 | 代码里的内置列表 | 本地代理（local relay）的上游配置 |
 
 目录由 `catalog-sync` 工作流每 6 小时从上游同步一次，生成 `catalog.db`。API 只读这份文件，不实时转发上游请求。
