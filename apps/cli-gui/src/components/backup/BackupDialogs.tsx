@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Github } from 'lucide-react'
 import type { BackupConflict, BackupConflictChoice, BackupConnectResult, BackupSnapshot } from '@as/types'
 import { useI18n, useT } from '../../i18n'
-import { errorText } from '../../lib/rpc'
+import { errorText, RpcError } from '../../lib/rpc'
 import { counted, describeBackupError, deviceSlug, formatWhen, isHttpsRemote, redactRemote, snapshotLabel } from '../../lib/backup'
 import type { FriendlyError } from '../../lib/errors'
 import { useBackup } from '../../state/Backup'
@@ -59,6 +59,7 @@ function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'resto
   const [invalid, setInvalid] = useState<string | null>(null)
   const [error, setError] = useState<FriendlyError | null>(null)
   const [busy, setBusy] = useState(false)
+  const [retainConnection, setRetainConnection] = useState(false)
   const [done, setDone] = useState<BackupConnectResult | null>(null)
   const [method, setMethod] = useState<'github' | 'url'>('github')
   const primary = useRef<HTMLButtonElement>(null)
@@ -97,7 +98,7 @@ function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'resto
 
   async function closeConnection() {
     if (busy) return
-    if (firstRun && done) {
+    if (firstRun && done && !retainConnection) {
       setBusy(true)
       try {
         await backup.disconnect()
@@ -122,8 +123,8 @@ function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'resto
       await backup.sync('pull', true)
       onClose()
     } catch (err) {
-      // The core rolls back under the backup lock; retain the connection and
-      // its snapshot if cleanup itself failed, so recovery remains possible.
+      // Preserve recovery snapshots if cleanup itself failed.
+      setRetainConnection(err instanceof RpcError && err.fields.reason === 'rollback-failed')
       setError(describeBackupError(err, t))
       setBusy(false)
     }
@@ -159,7 +160,7 @@ function ConnectBody({ mode, firstRun = false, onClose }: { mode: 'new' | 'resto
         <DialogFooter>
           <Button disabled={busy} onClick={() => void closeConnection()}>{t('bk.later')}</Button>
           {firstRun ? (
-            <Button ref={primary} variant="primary" disabled={busy || items === 0} onClick={() => void next('pull')}>
+            <Button ref={primary} variant="primary" disabled={busy || items === 0 || retainConnection} onClick={() => void next('pull')}>
               {t('bk.pullChoice')}
             </Button>
           ) : items === 0 ? (

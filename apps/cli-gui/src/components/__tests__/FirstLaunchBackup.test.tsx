@@ -21,7 +21,7 @@ function Probe() {
   return <span data-testid="shell">{shellDialog}</span>
 }
 
-function setup(options: { saved?: Record<string, unknown>; installed?: unknown[]; failPull?: boolean; failSave?: boolean } = {}) {
+function setup(options: { saved?: Record<string, unknown>; installed?: unknown[]; failPull?: boolean; rollbackFails?: boolean; failSave?: boolean } = {}) {
   const saved = options.saved ?? {}
   const calls: [string, unknown[]][] = []
   let connected = false
@@ -37,6 +37,7 @@ function setup(options: { saved?: Record<string, unknown>; installed?: unknown[]
     if (method === 'connectBackup') { connected = true; return { status: { ...empty, connected }, remoteItems: 1 } }
     if (method === 'disconnectBackup') { connected = false; return }
     if (method === 'pullBackup') {
+      if (options.rollbackFails) throw new rpc.RpcError('rollback incomplete', 'BackupRollbackError', { reason: 'rollback-failed' })
       if (options.failPull) throw new Error('restore rolled back')
       return { ...empty, pushed: null, uploaded: [], applied: [], snapshot: 'before' }
     }
@@ -107,4 +108,16 @@ test('a failed pull stays visible with an explicit way to cancel and disconnect'
   fireEvent.click(screen.getByRole('button', { name: '稍后' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(calls.some(([m]) => m === 'disconnectBackup')).toBe(true)
+})
+
+
+test('incomplete rollback keeps the connection and recovery snapshots when closing', async () => {
+  const { calls } = setup({ rollbackFails: true })
+  await connect()
+  fireEvent.click(await screen.findByRole('button', { name: '恢复到本机' }))
+  expect(await screen.findByText('rollback incomplete')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '恢复到本机' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '稍后' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.some(([m]) => m === 'disconnectBackup')).toBe(false)
 })

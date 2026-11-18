@@ -462,3 +462,17 @@ test('first-launch pull cleans files from a hook that failed before registration
   await expect(b.engine.pullBackup({ firstRun: true })).rejects.toThrow('existing item directory')
   expect(await readFile(join(b.aasHome, 'mcps', 'plain-mcp', 'keep'), 'utf-8')).toBe('user data')
 })
+
+test('first-launch pull reports rollback failure without losing recovery snapshots', async () => {
+  const remote = await bareRemote()
+  const a = await populated()
+  await a.engine.connectBackup({ remote })
+  await a.engine.backupNow()
+  const b = await device('rollback-failure')
+  await b.engine.connectBackup({ remote })
+  b.engine.enable = async () => { throw new Error('enable failed') }
+  b.engine.uninstall = async () => { throw new Error('uninstall failed') }
+  await expect(b.engine.pullBackup({ firstRun: true })).rejects.toMatchObject({ reason: 'rollback-failed' })
+  expect((await b.engine.listBackupSnapshots()).length).toBeGreaterThan(0)
+  expect((await b.engine.getBackupStatus()).connected).toBe(true)
+})

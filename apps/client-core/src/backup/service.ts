@@ -54,6 +54,14 @@ export class BackupRemoteRefusedError extends Error {
   }
 }
 
+export class BackupRollbackError extends Error {
+  readonly reason = 'rollback-failed'
+  constructor() {
+    super('First-launch restore failed and could not be completely undone; keep the backup connection and inspect the library before retrying')
+    this.name = 'BackupRollbackError'
+  }
+}
+
 export class BackupBusyError extends Error {
   readonly reason = 'busy'
   constructor() {
@@ -437,16 +445,20 @@ export class BackupService {
           if (firstRun) {
             // Undo every attempted item, including the one whose install/enable failed.
             // Uninstall uses the engine's ownership rules to restore existing agent entries.
-            const rollback = await this.applyAll(local.dir, toApply.map(t => ({
-              key: t.key, parts: { content: true, state: true },
-            })).reverse())
-            if (rollback.errors.size) {
-              throw new Error('First-launch restore failed and could not be completely undone; keep the backup connection and inspect the library before retrying')
+            try {
+              const registered = (await readRegistry(this.aasHome)).installed
+              const rollback = await this.applyAll(local.dir, toApply.filter(t => {
+                const { category, slug } = parseKey(t.key)
+                return registered.some(i => i.category === category && i.slug === slug)
+              }).map(t => ({ key: t.key, parts: { content: true, state: true } })).reverse())
+              if (rollback.errors.size) throw new BackupRollbackError()
+              // An install hook can fail before registering its item. These paths
+              // were absent before the attempt, so no preexisting data is removed.
+              for (const dir of freshDirs) await rm(dir, { recursive: true, force: true })
+              await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
+            } catch {
+              throw new BackupRollbackError()
             }
-            // An install hook can fail before registering its item. These paths
-            // were absent before the attempt, so no preexisting data is removed.
-            for (const dir of freshDirs) await rm(dir, { recursive: true, force: true })
-            await writeState(this.aasHome, { conflicts: [], blocked: [], failed: [], notRestorable: [] })
           }
           throw error
         }
