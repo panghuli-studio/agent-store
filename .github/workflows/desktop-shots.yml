@@ -20,9 +20,14 @@ on:
       - 'scripts/ci-catalog-api.sh'
       - '.github/workflows/desktop-shots.yml'
   workflow_dispatch:
+    inputs:
+      probe_only:
+        description: Run only the disconnect repaint measurements
+        type: boolean
+        default: false
 
 concurrency:
-  group: desktop-shots-${{ github.ref }}
+  group: desktop-shots-${{ github.ref }}-${{ inputs.probe_only && 'probe' || 'screenshots' }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +62,7 @@ jobs:
       - name: Start the catalog API
         run: scripts/ci-catalog-api.sh as-api:ci 3001
       - name: First-launch restore (Chinese and English)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/first-launch
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -v "$PWD/out/first-launch:/out/first-launch" --entrypoint bash as-desktop-linux /work/test/desktop-linux/first-launch.sh
@@ -68,29 +73,29 @@ jobs:
           path: out/first-launch/
           retention-days: 14
       - name: Disconnect repaint probe
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.probe_only }}
         # Measurements, not checks (#233): see test/desktop-linux/disconnect-probe.sh.
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/disconnect-probe.sh
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && inputs.probe_only }}
         with:
           name: disconnect-probe
           path: out/probe/
           retention-days: 14
       - name: Screenshots of the native window
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/shots.sh
       - name: Marketing screenshots
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/marketing
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -e OUT=/out/marketing -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/marketing.sh
       - name: AppImage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.probe_only }}
         run: |
           mkdir -p out/appimage
           docker run --rm --shm-size 1g --add-host=host.docker.internal:host-gateway -e AS_STORE_URL="$CATALOG" -e MOCK_UPSTREAM="$CATALOG" -e OUT=/out/appimage -v "$PWD/out:/out" --entrypoint bash as-desktop-linux /work/test/desktop-linux/appimage.sh

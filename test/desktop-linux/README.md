@@ -68,6 +68,8 @@ After a change to the client's screens, regenerate them:
 
 ## 断开流程重绘诊断（#237）
 
+手动运行 `desktop-shots` 工作流并选择 `probe_only=true`，可单独采集测量；普通 PR 作业仍执行原生界面验收、营销截图和 AppImage。诊断有独立并发组，不取消正常验收，也不把多组长时间观测塞进正常验收的时限。
+
 `disconnect-probe.sh` 的 WebDriver 读数还记录实际页面语言、页面可见性、焦点、动画时钟、字体加载状态，以及对话框/设备码节点的尺寸和计算样式；`wd.py hook` 记录对话框内的输入、输入法组合与焦点事件。事件不记录输入值或 RPC 参数。
 
 对照同一步的 `*-dom.json`、`*-wd.png` 与 Xvfb `*.png`：
