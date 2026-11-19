@@ -182,7 +182,7 @@ components:
 
 # Design System: Agent Store Web
 
-适用范围：`apps/store` 全站。2026-11-13 起网站按方向 C「光谱」整体改版（总记录 #158），交互和文案的参照是分支 `design/redesign-prototype` 上的原型 `docs/design/mockups/site/`，视觉取自其中的 `proto.css`，三个方向的样片在 `docs/design/tiles/tiles.html`。
+适用范围：`apps/store` 全站。2026-11-13 起网站按方向 C「光谱」整体改版（总记录 #158），交互和文案的参照是分支 `design/redesign-prototype` 上的原型 `docs/design/mockups/site/`，视觉取自其中的 `proto.css`，三个方向的比较记录在 #158。
 
 改版分四步：#159 落设计变量、字体、全站外壳（顶部导航、页脚、页面背景）和基础组件；#160 首页、客户端、定价、下载；#161 商店列表、搜索、详情；#162 登录、个人面板、文档、法律页、404。各页面的版式在对应 Issue 里写进本文件。上一套体系的类名（`paper`、`ink`、`plate` 等）和图版装饰 `.plate` 已全部删除。产品事实在 `PRODUCT.md`。
 

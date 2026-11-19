@@ -7,7 +7,7 @@ mkdir -p "$OUT"
 export DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
 # ASCII automation uses disabled WebKit compositing; X11 XIM can leave stale native
 # frames even under GNOME (#239). Keep simple test-only; real IBus paths are measured
-# by ime-probe.yml. See docs/investigations/linux-ime.md.
+# by ime-probe.yml. See docs/linux-ime.md.
 export GTK_IM_MODULE=gtk-im-context-simple
 Xvfb :99 -screen 0 1280x800x24 >"$OUT/xvfb.log" 2>&1 &
 xvfb_pid=$!

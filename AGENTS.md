@@ -41,6 +41,18 @@ copy source is the approved prototype merged into `main` in #167,
 `apps/cli-gui/src/globals.css`; change them there and in `DESIGN.md` together. Every screen has been
 rebuilt; `docs/ui/Agent Store.dc.html` no longer constrains new work.
 
+## What goes in `docs/`
+
+`docs/` holds conclusions only: what the product is, how it is built and run, the
+decisions in force and the design rules (owner decision, #241). Process material does
+not go into the repository: plans, task breakdowns, investigation records, evidence
+files and screenshots, draft reports, "next step" drafts and dated working notes. Keep
+it in the issue, the pull request and the CI artifacts that produced it, and link
+there from the conclusion. When a piece of work ends in a finding, write the finding
+as a short conclusion in `docs/` (see `docs/linux-ime.md`). When a conclusion
+changes, edit the document so it states the current rule; do not append a record of
+how it changed.
+
 ## Tests that touch the DOM
 
 When a matcher fails, Bun prints its values with `Bun.inspect`, which walks a happy-dom
