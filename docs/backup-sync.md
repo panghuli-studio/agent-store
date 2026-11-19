@@ -63,9 +63,10 @@ and push to it: `public_repo` cannot reach private repositories. A sign-in appro
 
 **The OAuth app.** The device flow needs the client id of an OAuth app with *Enable Device Flow* checked. It needs no
 callback URL and no client secret, so no secret is in the code or the build. The id is the `DEFAULT_GITHUB_CLIENT_ID`
-constant in `apps/cli/src/engine.ts`. `AS_GITHUB_CLIENT_ID` overrides it, and `AS_GITHUB_URL` and `AS_GITHUB_API_URL`
-point at another GitHub. While it is empty, the GitHub path stops at once with `github-not-configured` and the Git-URL
-path is unaffected.
+constant in `apps/cli/src/engine.ts`: `Ov23libYqp7LUPlxHdMN`, the existing `agent-store` OAuth app owned by
+`phenix3443`, with device flow enabled. `AS_GITHUB_CLIENT_ID` overrides it, and `AS_GITHUB_URL` and
+`AS_GITHUB_API_URL` point at another GitHub. Builds with an empty client id stop the GitHub path at once with
+`github-not-configured`; the Git-URL path is unaffected.
 
 ### Connecting with a Git URL
 
