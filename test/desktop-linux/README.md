@@ -87,7 +87,7 @@ After a change to the client's screens, regenerate them:
 The dedicated `Linux IME presentation measurements` workflow compares bare X11,
 GNOME X11 and nested GNOME Wayland, real IBus GTK/XIM input, native child-window
 promotion and WebKit rendering switches. It measures the published `.deb` as well
-as an independent GTK/WebKit page. See [the investigation](../../docs/investigations/linux-ime.md)
-for versions, native screenshots, limitations and why the ASCII screenshot scripts
-keep their test-only simple input context. A green measurement job alone is not a
+as an independent GTK/WebKit page. See [the finding](../../docs/linux-ime.md) for
+the conclusion, the tested scope and why the ASCII screenshot scripts keep their
+test-only simple input context; versions and native screenshots are in #239 and #240. A green measurement job alone is not a
 CJK or native-presentation pass; inspect the input events and original native PNGs.

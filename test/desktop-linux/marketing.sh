@@ -58,7 +58,7 @@ export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
 # ASCII screenshot automation deliberately disables WebKit compositing above.
 # X11 XIM can leave stale native frames in that mode even under GNOME (#239).
 # Keep simple test-only; ime-probe.yml exercises real IBus GTK/XIM and default rendering.
-# Evidence and limits: docs/investigations/linux-ime.md.
+# Finding and limits: docs/linux-ime.md (measurements in #239).
 export GTK_IM_MODULE=gtk-im-context-simple
 export GDK_SCALE=$SCALE
 Xvfb :99 -screen 0 2600x1800x24 >/dev/null 2>&1 &
