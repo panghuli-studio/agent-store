@@ -27,6 +27,10 @@ const PAGES = [
   { name: 'supplement-none', path: '/store?state=empty&q=pdf%20tools&supplement=none' },
   { name: 'supplement-unavailable', path: '/store?state=empty&q=pdf%20tools&supplement=unavailable' },
   { name: 'detail', path: DETAIL },
+  // Skills hosted only on ClawHub or SkillHub (#156): no repository row, the listing link, `aas install`.
+  { name: 'detail-clawhub', path: '/store/skill/clawhub:adarshdigievo/python' },
+  { name: 'detail-skillhub', path: '/store/skill/skillhub:tencent-adm/ima-skills' },
+  { name: 'search-hosted', path: '/store?q=ima-skills&category=skill' },
   { name: 'detail-mcp', path: '/store/mcp/mcp-registry:com.browser-use/browser-use' },
   { name: 'detail-provider', path: '/store/provider/builtin:openrouter' },
   { name: 'detail-missing', path: '/store/skill/github:nobody/nothing/none', status: 404 },
