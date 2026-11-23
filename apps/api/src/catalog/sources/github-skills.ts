@@ -100,7 +100,8 @@ export class RepoTooLargeError extends Error {
  * The trees of skill directories at a commit, each fetched on its own (`<commit>:<dir>`),
  * with paths made repo-relative. A directory that is gone, is no directory, has its own
  * tree truncated or holds no SKILL.md is left out; `missing` names those that are gone, are
- * no directory or hold no SKILL.md at this commit.
+ * no directory or hold no SKILL.md at this commit, `failed` those whose request failed. A
+ * GitHub rate limit stops the whole read: none of them counts as tried.
  */
 async function readSkillDirs(
   github: Octokit,
@@ -108,8 +109,9 @@ async function readSkillDirs(
   repo: string,
   commit: string,
   dirs: string[],
-): Promise<{ read: Array<{ dir: string; sha: string; entries: TreeEntry[] }>; missing: string[] }> {
+): Promise<{ read: Array<{ dir: string; sha: string; entries: TreeEntry[] }>; missing: string[]; failed: Array<{ dir: string; error: string }> }> {
   const missing: string[] = []
+  const failed: Array<{ dir: string; error: string }> = []
   const read = await pMap(
     dirs,
     async (dir) => {
@@ -131,12 +133,15 @@ async function readSkillDirs(
           missing.push(dir)
           return null
         }
-        throw e
+        if (isRateLimit(e)) throw e
+        // One directory's failure costs only its own turn; the others are still read.
+        failed.push({ dir, error: e instanceof Error ? e.message : String(e) })
+        return null
       }
     },
     { concurrency: 4 },
   )
-  return { read: read.filter((d): d is { dir: string; sha: string; entries: TreeEntry[] } => d !== null), missing }
+  return { read: read.filter((d): d is { dir: string; sha: string; entries: TreeEntry[] } => d !== null), missing, failed }
 }
 
 /** What a read of a truncated repo through its directories tried, and what it found. */
@@ -146,6 +151,8 @@ export interface DirRead {
   read: string[]
   /** Gone, no directory, or no SKILL.md at this commit. */
   missing: string[]
+  /** Their request failed (not a rate limit): tried, but nothing is known about them. */
+  failed: Array<{ dir: string; error: string }>
 }
 
 /** A truncated repo none of whose given directories holds a skill. */
@@ -211,9 +218,12 @@ export async function scanRepo(
       wanted = wanted.slice(0, MAX_SKILLS_PER_REPO)
     }
     if (limits.maxSkills !== undefined && wanted.length > limits.maxSkills) throw new RepoTooLargeError(fullName, wanted.length, limits.maxSkills)
-    const { read, missing } = await readSkillDirs(github, owner, repo, commit.sha, wanted)
-    dirRead = { tried: wanted, read: read.map((d) => d.dir), missing }
-    if (read.length === 0) throw new MissingSkillDirsError(`${truncated}; no directory the finds name holds a SKILL.md`, dirRead)
+    const { read, missing, failed } = await readSkillDirs(github, owner, repo, commit.sha, wanted)
+    dirRead = { tried: wanted, read: read.map((d) => d.dir), missing, failed }
+    if (read.length === 0) {
+      const why = failed.length ? `${failed.length} skill directories could not be read (${failed[0]!.error})` : 'no directory the finds name holds a SKILL.md'
+      throw new MissingSkillDirsError(`${truncated}; ${why}`, dirRead)
+    }
     entries = read.flatMap((d) => d.entries)
     for (const d of read) treeShaOf.set(d.dir, d.sha)
     dirs = read.map((d) => d.dir)
@@ -364,6 +374,8 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
               // Truncated tree, read through known directories: the rest of the repo was not
               // seen, so only skills whose own directory is gone are marked gone.
               noteDirs(run, scan.scope, dirs, scan.dirs, true)
+              const unread = scan.dirs?.failed ?? []
+              if (unread.length) run.errors.push(`${fullName}: ${unread.length} skill directories could not be read (${unread[0]!.error}); they are tried again in turn`)
               run.attempted!.push({ repo: scan.scope, status: scan.records.length ? 'named skills' : 'no skills' })
             } else {
               scopes.push(scan.scope)

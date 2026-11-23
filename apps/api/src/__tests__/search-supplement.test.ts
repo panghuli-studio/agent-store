@@ -1258,7 +1258,7 @@ describe('the catalog sync takes the finds in', () => {
     const setup = () => {
       const catalog = openCatalogForWrite(join(dir, 'catalog.db'))
       let discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
-      const sync = async (exported: string[] | null, present: string[]) => {
+      const sync = async (exported: string[] | null, present: string[], failing: string[] = []) => {
         // Two rows of the same repo, as from two lookups: merged, nothing dropped.
         const body = {
           listings: [],
@@ -1275,7 +1275,10 @@ describe('the catalog sync takes the finds in', () => {
           }
           return undefined
         }
-        const upstream = fakeFetch(routes, truncatedRoutes(Object.fromEntries(present.map((d) => [d, ['SKILL.md']]))))
+        // GitHub failing on these directories' trees (not a rate limit).
+        const broken: Route = (url) =>
+          failing.some((d) => decodeURIComponent(url.pathname).endsWith(`${MONO_SHA}:${d}`)) ? json({ message: 'Server Error' }, 500) : undefined
+        const upstream = fakeFetch(routes, broken, truncatedRoutes(Object.fromEntries(present.map((d) => [d, ['SKILL.md']]))))
         advance(MINUTE)
         const run = await syncCatalog(catalog, {
           stars: false, sources: [githubSkillsSource()], fetch: upstream, github: octokitWith(upstream), now: () => clock,
@@ -1320,6 +1323,19 @@ describe('the catalog sync takes the finds in', () => {
       reopen()
       expect((await sync(null, many.slice(500))).report).toMatchObject({ added: 2, errors: [] })
       expect(available()).toBe(2)
+      close()
+    })
+
+    test('a directory GitHub fails on costs only its own turn: the batch is read and the rest follow next run', async () => {
+      const { sync, available, close } = setup()
+      const first = await sync(many, many, [many[0]!])
+      expect(first.report).toMatchObject({ added: 499, unavailable: 0, errors: [expect.stringContaining('1 skill directories could not be read')] })
+      expect((await sync(null, many, [many[0]!])).report).toMatchObject({ added: 2, unavailable: 0 })
+      expect(available()).toBe(501)
+      // Once GitHub answers, it is read in its turn.
+      await sync(null, many)
+      await sync(null, many)
+      expect(available()).toBe(502)
       close()
     })
 
