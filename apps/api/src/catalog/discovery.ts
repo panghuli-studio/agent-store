@@ -387,13 +387,11 @@ export function applySearchFinds(db: Database, body: unknown, stamp: string): Se
   return report
 }
 
-/** Most skill directories taken per repo from the API's export; a scan reads each with one request. */
-const MAX_FIND_DIRS = 40
-
 /**
  * The skill directories the API read and serves, per lowercase repo, from its export
  * (`repos[].dirs`). The sync reads a repo whose git tree GitHub truncates through these.
- * Unsafe paths, unknown repos and anything past MAX_FIND_DIRS a repo are dropped.
+ * Unsafe paths and malformed repos are dropped; rows naming the same repo are merged. All
+ * of a repo's directories are kept: a scan caps them as it caps a whole-repo scan.
  */
 export function searchFindDirs(body: unknown): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>()
@@ -403,7 +401,7 @@ export function searchFindDirs(body: unknown): Map<string, Set<string>> {
     const r = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {}
     const name = typeof r['fullName'] === 'string' && /^[^/]+\/[^/]+$/.test(r['fullName']) ? githubRepoOf(`https://github.com/${r['fullName']}`) : null
     if (!name || !Array.isArray(r['dirs'])) continue
-    const dirs = (r['dirs'] as unknown[]).filter((d): d is string => typeof d === 'string' && GITHUB_DIR.test(d)).slice(0, MAX_FIND_DIRS)
+    const dirs = (r['dirs'] as unknown[]).filter((d): d is string => typeof d === 'string' && GITHUB_DIR.test(d))
     if (dirs.length === 0) continue
     const key = name.toLowerCase()
     out.set(key, new Set([...(out.get(key) ?? []), ...dirs]))

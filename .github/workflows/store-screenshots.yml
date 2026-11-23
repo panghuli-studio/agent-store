@@ -21,6 +21,19 @@ on:
       - 'scripts/ci-catalog-api.sh'
       - '.github/workflows/store-screenshots.yml'
   workflow_dispatch:
+    inputs:
+      flow_url:
+        description: 'Walk the search supplement on this running store instead of taking the shots (scripts/store-supplement-flow.mjs)'
+        required: false
+        default: ''
+      flow_query:
+        description: 'Query for the flow; the store sends it to the sites its API names'
+        required: false
+        default: 'obsidian kanban board'
+      flow_find:
+        description: 'Id of an installable find the query returns'
+        required: false
+        default: 'github:openclaw/openclaw/obsidian-vault-maintainer'
 
 concurrency:
   group: store-screenshots-${{ github.ref }}
@@ -31,6 +44,7 @@ permissions:
 
 jobs:
   shots:
+    if: ${{ !inputs.flow_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -108,4 +122,34 @@ jobs:
         with:
           name: store-screenshots
           path: shots/
+          retention-days: 14
+
+  # #152: the supplement end to end on real data, from the search to an installable find
+  # and back. Only on request: it sends the query to the sites the API names.
+  supplement-flow:
+    if: ${{ inputs.flow_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Walk the flow
+        env:
+          FLOW_URL: ${{ inputs.flow_url }}
+          FLOW_QUERY: ${{ inputs.flow_query }}
+          FLOW_FIND: ${{ inputs.flow_find }}
+        run: |
+          cp scripts/store-supplement-flow.mjs /tmp/pw/
+          node /tmp/pw/store-supplement-flow.mjs "$FLOW_URL" "$GITHUB_WORKSPACE/flow" "$FLOW_QUERY" "$FLOW_FIND"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: store-supplement-flow
+          path: flow/
           retention-days: 14

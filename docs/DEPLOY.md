@@ -186,7 +186,7 @@ API 本地的 `catalog.db` 是下载来的只读副本，每次发布都会被�
 
 - 同一个搜索词在查询进行中再次到来，不会再发请求，共用那一次；查完后在上表的时间内直接用记录的结论，「没查到」同样记录。「全部站点失败」只在内存里记 30 秒。
 - 以后的搜索（包括别的搜索词）先看 `found_listings` 和 `found_resources` 里名称或描述包含全部搜索词的条目，够用就不再问站点。
-- `GET /api/discovery/export` 导出 `found_listings` 和 `found_repos`（各最多 5000 条，最近的在前）；`repos` 每条带 API 最近一次读它的时间和结果（`lastAttemptAt`、`lastStatus`，取值同上面的日志，没读过时为 `null`），以及 `found_resources` 里从这个仓库读到的技能目录（`dirs`，没有时为空列表）。这个接口不鉴权：内容只有各站点本来就公开的条目和 GitHub 仓库名。`catalog-sync` 工作流每次运行先读这个地址（`FINDS_URL`，命令行参数 `--finds-url`）：条目按各自的站点写进 `discovery.db` 的 `listings`（已有的不动），仓库以「从没试过」进入扫描队列（`discovered_by = 'search'`），之后和榜单发现的仓库一样被扫描、发布进 `catalog.db`；目录树被截断的仓库按导出的 `dirs` 读（每个仓库最多 40 个，路径不安全的丢弃），发布后由 `catalog.db` 里的目录接着保持。重复读入不会产生重复行。读不到这个地址只记在报告里（`report.json` 的 `discovery.searchFinds` 和 job summary），不影响这次同步，下次再读。
+- `GET /api/discovery/export` 导出 `found_listings` 和 `found_repos`（各最多 5000 条，最近的在前）；`repos` 每条带 API 最近一次读它的时间和结果（`lastAttemptAt`、`lastStatus`，取值同上面的日志，没读过时为 `null`），以及 `found_resources` 里从这个仓库读到的技能目录（`dirs`，没有时为空列表）。这个接口不鉴权：内容只有各站点本来就公开的条目和 GitHub 仓库名。`catalog-sync` 工作流每次运行先读这个地址（`FINDS_URL`，命令行参数 `--finds-url`）：条目按各自的站点写进 `discovery.db` 的 `listings`（已有的不动），仓库以「从没试过」进入扫描队列（`discovered_by = 'search'`），之后和榜单发现的仓库一样被扫描、发布进 `catalog.db`；目录树被截断的仓库按导出的 `dirs` 读（同一仓库的多行合并，路径不安全的丢弃；和整仓库扫描一样每个仓库最多 500 个目录），发布后由 `catalog.db` 里的目录接着保持。重复读入不会产生重复行。读不到这个地址只记在报告里（`report.json` 的 `discovery.searchFinds` 和 job summary），不影响这次同步，下次再读。
 
 **在测试环境验证过的**（证据在 #152、#229 和修复截断仓库发布的 PR 里）：补搜从 SkillsMP 给出的目录读出截断仓库里的技能，详情可安装；`found_listings`、`found_repos`、`found_resources`、`search_lookups` 和技能详情在滚动重启后不变，重启后同一搜索词直接用存下的结论、不再请求站点；定时同步读入非空导出后，补搜新增的条目保留首次发现时间，不随 `catalog.db` 发布丢失。
 

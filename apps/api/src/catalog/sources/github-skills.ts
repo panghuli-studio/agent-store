@@ -171,8 +171,13 @@ export async function scanRepo(
   let subset = false
   if (tree.truncated) {
     const truncated = `${fullName}: git tree is truncated (too large to scan)`
-    const wanted = [...(limits.dirs ?? [])].filter((d) => d !== '')
+    let wanted = [...(limits.dirs ?? [])].filter((d) => d !== '').sort()
     if (wanted.length === 0) throw new Error(truncated)
+    if (limits.maxSkills === undefined && wanted.length > MAX_SKILLS_PER_REPO) {
+      // The same cap as a whole-repo scan, applied before one tree request per directory.
+      skipped['repo has too many skills'] = wanted.length - MAX_SKILLS_PER_REPO
+      wanted = wanted.slice(0, MAX_SKILLS_PER_REPO)
+    }
     if (limits.maxSkills !== undefined && wanted.length > limits.maxSkills) throw new RepoTooLargeError(fullName, wanted.length, limits.maxSkills)
     const read = await readSkillDirs(github, owner, repo, commit.sha, wanted)
     if (read.length === 0) throw new Error(`${truncated}; no directory the finds name holds a SKILL.md`)

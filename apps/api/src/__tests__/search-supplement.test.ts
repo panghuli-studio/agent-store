@@ -13,7 +13,7 @@ import { resourceRoutes } from '../catalog/routes'
 import { buildSearchSupplement } from '../catalog/runtime'
 import type { ExternalFind, SearchSource } from '../catalog/search-sources'
 import { clawhubSearch } from '../catalog/sources/clawhub'
-import { githubSkillsSource } from '../catalog/sources/github-skills'
+import { githubSkillsSource, scanRepo } from '../catalog/sources/github-skills'
 import { skillhubSearch } from '../catalog/sources/skillhub'
 import { githubDirOf, skillsmpSearch } from '../catalog/sources/skillsmp'
 import { fallbackTrigger, lookupEligible, mergeFinds, normalizeQuery, reposByRelevance, type RepoScanOutcome, SearchSupplement, SUPPLEMENT_DEFAULTS, type SupplementConfig } from '../catalog/supplement'
@@ -1228,20 +1228,62 @@ describe('the catalog sync takes the finds in', () => {
     expect(reader.list({ q: 'obsidian kanban' }).resources.map((r) => r.id)).toEqual([KANBAN])
   })
 
-  test('only safe directories of well-formed repos are taken from the export', () => {
+  test('only safe directories of well-formed repos are taken from the export; rows of one repo merge', () => {
     const dirs = searchFindDirs({
       repos: [
         { fullName: 'Mono/Repo', dirs: ['a/b', '../etc', '/abs', 'c\\d', 7, 'a/b'] },
+        { fullName: 'mono/repo', dirs: ['e/f'] },
         { fullName: '../../etc', dirs: ['x'] },
         { fullName: 'acme/tools' },
-        { fullName: 'big/repo', dirs: Array.from({ length: 50 }, (_, i) => `s/${i}`) },
         null,
       ],
     })
-    expect([...dirs.keys()]).toEqual(['mono/repo', 'big/repo'])
-    expect([...dirs.get('mono/repo')!]).toEqual(['a/b'])
-    expect(dirs.get('big/repo')!.size).toBe(40)
+    expect([...dirs.keys()]).toEqual(['mono/repo'])
+    expect([...dirs.get('mono/repo')!]).toEqual(['a/b', 'e/f'])
     expect(searchFindDirs({ error: 'nope' }).size).toBe(0)
+  })
+
+  test('every directory exported for a truncated repo is published in one run, past the lookup limit of 40', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => `skills/s${String(i).padStart(2, '0')}`)
+    const body = {
+      listings: [],
+      // Two rows of the same repo, as from two lookups: merged, nothing dropped.
+      repos: [
+        { fullName: MONO, source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: many.slice(0, 30) },
+        { fullName: 'Mono/Repo', source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: many.slice(30) },
+      ],
+    }
+    const routes: Route = (url) => {
+      if (url.hostname === 'api.test') return json(body)
+      if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/skills/`)) {
+        const name = url.pathname.split('/').at(-2)
+        return new Response(`---\nname: ${name}\ndescription: Skill ${name}\n---\n`)
+      }
+      return undefined
+    }
+    const catalog = openCatalogForWrite(join(dir, 'catalog.db'))
+    const discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
+    const sync = (findsUrl?: string) => {
+      const upstream = fakeFetch(routes, truncatedRoutes(Object.fromEntries(many.map((d) => [d, ['SKILL.md']]))))
+      return syncCatalog(catalog, {
+        stars: false, sources: [githubSkillsSource()], fetch: upstream, github: octokitWith(upstream),
+        discovery: { db: discovery, sources: [], httpRetries: 0, ...(findsUrl ? { findsUrl } : {}) },
+      })
+    }
+    expect((await sync(FINDS_URL)).sources[0]).toMatchObject({ added: 45, errors: [], skipped: {} })
+    // Without the export (the API dropped them once published), the catalog's directories carry on.
+    expect((await sync()).sources[0]).toMatchObject({ added: 0, unavailable: 0, errors: [] })
+    expect(catalog.query('SELECT count(*) AS n FROM resources WHERE unavailable_at IS NULL').get()).toEqual({ n: 45 })
+    catalog.close()
+    discovery.close()
+  })
+
+  test('a truncated repo is read through at most as many directories as a whole-repo scan takes', async () => {
+    const f = fakeFetch(truncatedRoutes({}))
+    const dirs = new Set(Array.from({ length: 502 }, (_, i) => `skills/s${String(i).padStart(3, '0')}`))
+    await expect(scanRepo(octokitWith(f), f, MONO, new Map(), { dirs })).rejects.toThrow('no directory the finds name holds a SKILL.md')
+    // The commit, the truncated tree, then one tree request for each of the first 500.
+    expect(calls(f, 'api.github.com')).toHaveLength(2 + 500)
   })
 
   test('garbage in the export is skipped, and an unreachable API costs only that run', async () => {
