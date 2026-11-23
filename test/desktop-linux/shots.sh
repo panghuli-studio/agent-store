@@ -6,7 +6,7 @@
 # install dialog and libraries (#164), the welcome, usage and settings pages (#165), projects (#166), the
 # loopback endpoint the web store asks (#181), the relay controls, connection test, provider order and
 # usage breakdown (#192), backup and sync (#112) with GitHub sign-in (#231), the desktop sign-in with favorites (#195) and the
-# first-run import (#193). Each step is driven by an
+# first-run import (#193) and skills hosted only on ClawHub or SkillHub (#156). Each step is driven by an
 # agent-store:// link, the keyboard, or aas itself, and checked on disk.
 # Writes /out/NN-*.png, /out/result.txt and /out/cli.txt; exits non-zero if a
 # check fails.
@@ -20,6 +20,8 @@ NPM_MCP_ID=mcp-registry:io.github.upstash/context7
 BEARER_MCP_ID=mcp-registry:ai.admux/admux
 SSE_MCP_ID=mcp-registry:io.github.humanjesse/textarttools-mcp
 PROVIDER_ID=builtin:openrouter
+CLAWHUB_SKILL_ID=clawhub:adarshdigievo/python
+SKILLHUB_SKILL_ID=skillhub:tencent-adm/ima-skills
 mkdir -p "$OUT"
 : > "$OUT/result.txt"
 : > "$OUT/cli.txt"
@@ -45,6 +47,8 @@ cli() { echo "\$ aas $*" >>"$OUT/cli.txt"; "$SIDECAR" "$@" >>"$OUT/cli.txt" 2>&1
 failed=0
 check() { if eval "$2"; then log "ok: $1"; else log "FAIL: $1"; failed=1; fi; }
 links_to() { [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; }
+# Prints the library slug of hosted skill $1 when its copy matches the listing (hosted-check.py).
+hosted_slug() { python3 -I /work/test/desktop-linux/hosted-check.py "${AS_STORE_URL:-https://agent-store-test.panghuli.tech}" "$1" "$LIB" "$HOME" 2>>"$OUT/result.txt"; }
 
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
@@ -161,11 +165,40 @@ sleep 15
 shot 05-skill-detail-codex-off
 stop_app
 
+# 4b. Skills hosted only on ClawHub or SkillHub (#156). The desktop preview names the site
+#     and the SHA-256 check; the copy is checked file by file against the listing. SkillHub
+#     goes through aas, after its preview. Both are uninstalled again so later steps see
+#     the same library as before.
+install_link "$CLAWHUB_SKILL_ID"
+shot 05b-clawhub-skill-confirm
+confirm 25
+shot 05c-clawhub-skill-install-done
+open_result
+shot 05d-clawhub-skill-library-detail
+stop_app
+CLAWHUB_SLUG=$(hosted_slug "$CLAWHUB_SKILL_ID")
+check "the desktop installed the ClawHub skill: every file has the listed SHA-256, both agents link to it" '[ -n "$CLAWHUB_SLUG" ]'
+install_link "$SKILLHUB_SKILL_ID"
+shot 05e-skillhub-skill-confirm
+# Activate the focused Cancel button; Escape also dismisses the Discover pane.
+xdotool key Return
+sleep 6
+shot 05f-skillhub-discover-detail
+stop_app
+cli search ima-skills
+cli info "$SKILLHUB_SKILL_ID"
+cli install "$SKILLHUB_SKILL_ID"
+SKILLHUB_SLUG=$(hosted_slug "$SKILLHUB_SKILL_ID")
+check "aas installed the SkillHub skill: every file has the listed SHA-256, both agents link to it" '[ -n "$SKILLHUB_SLUG" ]'
+check "aas info names the SkillHub listing" 'grep -q "skillhub.cn/skills/" "$OUT/cli.txt"'
+for s in "$CLAWHUB_SLUG" "$SKILLHUB_SLUG"; do [ -n "$s" ] && cli uninstall "$s"; done
+check "the hosted skills were uninstalled again" '[ -n "$CLAWHUB_SLUG" ] && [ -n "$SKILLHUB_SLUG" ] && [ ! -e "$LIB/$CLAWHUB_SLUG" ] && [ ! -e "$LIB/$SKILLHUB_SLUG" ]'
+
 # 5. MCP from an npm package: the preview names the npx launch.
 install_link "$NPM_MCP_ID"
 shot 06-mcp-npm-confirm
-# Cancel leaves the entry selected on Discover behind the dialog.
-xdotool key Escape
+# Activate the focused Cancel button to keep the Discover detail visible.
+xdotool key Return
 sleep 6
 shot 06b-discover-detail
 install_link "$NPM_MCP_ID"
