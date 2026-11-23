@@ -6,7 +6,7 @@ import type { ResourceListResponse, SearchSupplementResponse, SkillResourceDetai
 import type { Database as Sqlite } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { openCatalogForWrite } from '../catalog/db'
-import { applySearchFinds, openDiscoveryForWrite, pickRepos } from '../catalog/discovery'
+import { applySearchFinds, openDiscoveryForWrite, pickRepos, searchFindDirs } from '../catalog/discovery'
 import { FoundStore, type FoundExport } from '../catalog/found-store'
 import { CatalogReader } from '../catalog/reader'
 import { resourceRoutes } from '../catalog/routes'
@@ -524,6 +524,28 @@ describe('identity', () => {
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 
+// A repo whose recursive git tree GitHub truncates, like openclaw/openclaw.
+const MONO = 'mono/repo'
+const MONO_SHA = '2'.repeat(40)
+const KANBAN = 'github:mono/repo/obsidian-kanban'
+/** A repo whose recursive tree GitHub truncates; `dirs` answer `<sha>:<dir>` tree requests. */
+const truncatedRoutes = (dirs: Record<string, string[]>): Route => (url) => {
+  if (url.hostname === 'api.github.com' && url.pathname === `/repos/${MONO}/commits/HEAD`) return new Response(MONO_SHA)
+  const prefix = `/repos/${MONO}/git/trees/`
+  if (url.hostname === 'api.github.com' && url.pathname.startsWith(prefix)) {
+    const ref = decodeURIComponent(url.pathname.slice(prefix.length))
+    if (ref === MONO_SHA) return json({ sha: 'root', truncated: true, tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: 'r', size: 1 }] })
+    const dir = ref.startsWith(`${MONO_SHA}:`) ? ref.slice(MONO_SHA.length + 1) : null
+    const files = dir ? dirs[dir] : undefined
+    if (!files) return json({ message: 'Not Found' }, 404)
+    return json({ sha: `t-${dir}`, truncated: false, tree: files.map((path, i) => ({ path, mode: '100644', type: 'blob', sha: `b${i}`, size: 10 })) })
+  }
+  if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/`)) {
+    return new Response('---\nname: obsidian-kanban\ndescription: Kanban boards in an Obsidian vault\n---\n')
+  }
+  return undefined
+}
+
 describe('what a lookup found', () => {
   const routes = () => fakeFetch(acmeRoutes, searchRoutes({
     clawhub: clawhubOk(clawhubHit('ivan', 'terraform', 'Terraform')),
@@ -592,26 +614,6 @@ describe('what a lookup found', () => {
   // tree of openclaw/openclaw and nexu-io/open-design holds 170 skills, so neither scan gave
   // a skill although each hit names its skill directory in githubUrl.
   describe('the skill directory SkillsMP names', () => {
-    const MONO = 'mono/repo'
-    const MONO_SHA = '2'.repeat(40)
-    const KANBAN = 'github:mono/repo/obsidian-kanban'
-    /** A repo whose recursive tree GitHub truncates; `dirs` answer `<sha>:<dir>` tree requests. */
-    const truncatedRoutes = (dirs: Record<string, string[]>): Route => (url) => {
-      if (url.hostname === 'api.github.com' && url.pathname === `/repos/${MONO}/commits/HEAD`) return new Response(MONO_SHA)
-      const prefix = `/repos/${MONO}/git/trees/`
-      if (url.hostname === 'api.github.com' && url.pathname.startsWith(prefix)) {
-        const ref = decodeURIComponent(url.pathname.slice(prefix.length))
-        if (ref === MONO_SHA) return json({ sha: 'root', truncated: true, tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: 'r', size: 1 }] })
-        const dir = ref.startsWith(`${MONO_SHA}:`) ? ref.slice(MONO_SHA.length + 1) : null
-        const files = dir ? dirs[dir] : undefined
-        if (!files) return json({ message: 'Not Found' }, 404)
-        return json({ sha: `t-${dir}`, truncated: false, tree: files.map((path, i) => ({ path, mode: '100644', type: 'blob', sha: `b${i}`, size: 10 })) })
-      }
-      if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/`)) {
-        return new Response('---\nname: obsidian-kanban\ndescription: Kanban boards in an Obsidian vault\n---\n')
-      }
-      return undefined
-    }
     const hit = (githubUrl: string, name = 'Obsidian Kanban') => ({ ...skillsmpHit(MONO, 'obsidian-kanban'), name, githubUrl })
 
     test('a repo whose git tree is truncated is read through that directory alone and served', async () => {
@@ -1177,6 +1179,69 @@ describe('the catalog sync takes the finds in', () => {
     // The API downloads that build: the skill is an ordinary catalog result now.
     reader.open(catalogPath)
     expect(reader.list({ q: 'terraform' }).resources.map((r) => r.id)).toContain(ACME_PLAN)
+  })
+
+  // #152 (2026-11-23): the API read obsidian-vault-maintainer from openclaw/openclaw through the
+  // directory SkillsMP named, but the scheduled sync scanned the repo whole, GitHub truncated
+  // its tree and the run logged an error: the skill never reached the catalog.
+  test('a skill the API read from a truncated repo is published by the sync and kept by later runs', async () => {
+    const DIR = 'extensions/obsidian/skills/kanban'
+    const f = fakeFetch(
+      truncatedRoutes({ [DIR]: ['SKILL.md'] }),
+      searchRoutes({ skillsmp: skillsmpOk({ ...skillsmpHit(MONO, 'obsidian-kanban'), githubUrl: `https://github.com/${MONO}/tree/main/${DIR}` }) }),
+    )
+    const s = supplement(f, { sources: [SOURCES.skillsmp] })
+    expect((await settle(s, 'obsidian kanban board')).resources.map((r) => r.id)).toEqual([KANBAN])
+    const app = resourceRoutes(reader, () => s)
+    const exported = (await (await app.fetch(new Request(FINDS_URL))).json()) as FoundExport
+    expect(exported.repos).toEqual([expect.objectContaining({ fullName: MONO, lastStatus: 'named skills', dirs: [DIR] })])
+    const exportRoute: Route = (url) => (url.hostname === 'api.test' ? app.fetch(new Request(url.href)) : undefined)
+
+    const catalogPath = join(dir, 'catalog.db')
+    const catalog = openCatalogForWrite(catalogPath)
+    const discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
+    const sync = (findsUrl?: string) => {
+      const upstream = fakeFetch(exportRoute, truncatedRoutes({ [DIR]: ['SKILL.md'] }))
+      return {
+        upstream,
+        run: syncCatalog(catalog, {
+          stars: false, sources: [githubSkillsSource()], fetch: upstream, github: octokitWith(upstream),
+          discovery: { db: discovery, sources: [], httpRetries: 0, ...(findsUrl ? { findsUrl } : {}) },
+        }),
+      }
+    }
+    const first = sync(FINDS_URL)
+    expect((await first.run).sources[0]).toMatchObject({ source: 'github-skills', status: 'ok', added: 1, errors: [] })
+    expect(calls(first.upstream, 'api.github.com').map((c) => decodeURIComponent(new URL(c).pathname))).toEqual([
+      `/repos/${MONO}/commits/HEAD`, `/repos/${MONO}/git/trees/${MONO_SHA}`, `/repos/${MONO}/git/trees/${MONO_SHA}:${DIR}`,
+    ])
+    expect(discovery.query('SELECT last_status FROM repos WHERE full_name = ?').get(MONO)).toEqual({ last_status: 'named skills' })
+
+    // Published: the API hands the skill over and stops exporting its directory. The next run
+    // reads the repo through the directory the catalog holds; nothing in it is marked gone.
+    const second = sync()
+    expect((await second.run).sources[0]).toMatchObject({ source: 'github-skills', status: 'ok', unavailable: 0, errors: [] })
+    expect(catalog.query('SELECT id, unavailable_at FROM resources').all()).toEqual([{ id: KANBAN, unavailable_at: null }])
+    catalog.close()
+    discovery.close()
+    reader.open(catalogPath)
+    expect(reader.list({ q: 'obsidian kanban' }).resources.map((r) => r.id)).toEqual([KANBAN])
+  })
+
+  test('only safe directories of well-formed repos are taken from the export', () => {
+    const dirs = searchFindDirs({
+      repos: [
+        { fullName: 'Mono/Repo', dirs: ['a/b', '../etc', '/abs', 'c\\d', 7, 'a/b'] },
+        { fullName: '../../etc', dirs: ['x'] },
+        { fullName: 'acme/tools' },
+        { fullName: 'big/repo', dirs: Array.from({ length: 50 }, (_, i) => `s/${i}`) },
+        null,
+      ],
+    })
+    expect([...dirs.keys()]).toEqual(['mono/repo', 'big/repo'])
+    expect([...dirs.get('mono/repo')!]).toEqual(['a/b'])
+    expect(dirs.get('big/repo')!.size).toBe(40)
+    expect(searchFindDirs({ error: 'nope' }).size).toBe(0)
   })
 
   test('garbage in the export is skipped, and an unreachable API costs only that run', async () => {

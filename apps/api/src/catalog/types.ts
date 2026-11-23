@@ -95,8 +95,12 @@ export interface SourceContext {
     /** Scopes of rows this source wrote before, so a run can revisit them. */
     knownScopes: string[]
   }
-  /** Skill repos picked from the discovery queue for this run, and skills.sh install counts. */
-  skills?: { repos: string[]; installs: Map<string, number> }
+  /**
+   * Skill repos picked from the discovery queue for this run, and skills.sh install counts.
+   * dirs: known skill directories per lowercase repo (the catalog's and the API's finds),
+   * read one by one when GitHub truncates the repo's git tree.
+   */
+  skills?: { repos: string[]; installs: Map<string, number>; dirs?: Map<string, Set<string>> }
   /** Hosted skills picked from discovery.db for this run; absent without discovery. */
   hosted?: HostedCandidate[]
   log: (message: string) => void

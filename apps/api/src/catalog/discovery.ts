@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import type { KyInstance } from 'ky'
+import { GITHUB_DIR } from './search-sources'
 import { githubRepoOf } from './stars'
 import type { HostedCandidate, HostedCheck } from './types'
 
@@ -384,6 +385,30 @@ export function applySearchFinds(db: Database, body: unknown, stamp: string): Se
     }
   })()
   return report
+}
+
+/** Most skill directories taken per repo from the API's export; a scan reads each with one request. */
+const MAX_FIND_DIRS = 40
+
+/**
+ * The skill directories the API read and serves, per lowercase repo, from its export
+ * (`repos[].dirs`). The sync reads a repo whose git tree GitHub truncates through these.
+ * Unsafe paths, unknown repos and anything past MAX_FIND_DIRS a repo are dropped.
+ */
+export function searchFindDirs(body: unknown): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  const root = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+  if (!Array.isArray(root['repos'])) return out
+  for (const item of root['repos'] as unknown[]) {
+    const r = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {}
+    const name = typeof r['fullName'] === 'string' && /^[^/]+\/[^/]+$/.test(r['fullName']) ? githubRepoOf(`https://github.com/${r['fullName']}`) : null
+    if (!name || !Array.isArray(r['dirs'])) continue
+    const dirs = (r['dirs'] as unknown[]).filter((d): d is string => typeof d === 'string' && GITHUB_DIR.test(d)).slice(0, MAX_FIND_DIRS)
+    if (dirs.length === 0) continue
+    const key = name.toLowerCase()
+    out.set(key, new Set([...(out.get(key) ?? []), ...dirs]))
+  }
+  return out
 }
 
 /** Repos the catalog already holds skills from join the queue as known repos. */

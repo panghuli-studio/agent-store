@@ -295,7 +295,8 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
         async (fullName) => {
           if (rateLimited) { addSkip(run.skipped, 'repo not scanned: GitHub rate limit'); return }
           try {
-            const scan = await scanRepo(ctx.github, ctx.fetch, fullName, installs)
+            const dirs = ctx.skills?.dirs?.get(fullName.toLowerCase())
+            const scan = await scanRepo(ctx.github, ctx.fetch, fullName, installs, dirs ? { dirs } : {})
             run.records.push(...scan.records)
             for (const [k, v] of Object.entries(scan.skipped)) run.skipped[k] = (run.skipped[k] ?? 0) + v
             const failed = scan.skipped[DOWNLOAD_FAILED] ?? 0
@@ -303,6 +304,10 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
               // Not reconciled: a skill whose SKILL.md did not download is not gone.
               run.errors.push(`${fullName}: ${failed} SKILL.md downloads failed; its skills keep their previous state`)
               run.attempted!.push({ repo: scan.scope, status: 'partial' })
+            } else if (scan.subset) {
+              // Truncated tree, read through known directories: the rest of the repo was not
+              // seen, so nothing in it is marked gone.
+              run.attempted!.push({ repo: scan.scope, status: scan.records.length ? 'named skills' : 'no skills' })
             } else {
               scopes.push(scan.scope)
               run.attempted!.push({ repo: scan.scope, status: scan.records.length ? 'scanned' : 'no skills' })

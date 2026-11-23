@@ -5,7 +5,7 @@ import { countAvailable, getMeta, setMeta, CATALOG_SCHEMA_VERSION } from './db'
 import { encodeDetail } from './detail-codec'
 import {
   applySearchFinds, beginRun, discoveryTotals, linkResources, pickHosted, pickRepos, pruneSnapshots, recordAttempts, recordHostedChecks,
-  runDiscovery, seedRepos, skillsShInstalls, type DiscoveryReport, type HostedQueueReport, type DiscoverySource, type SearchFindsReport,
+  runDiscovery, searchFindDirs, seedRepos, skillsShInstalls, type DiscoveryReport, type HostedQueueReport, type DiscoverySource, type SearchFindsReport,
 } from './discovery'
 import { describeError, upstreamClient } from './http'
 import { refreshStars, type StarsOptions, type StarsReport } from './stars'
@@ -67,6 +67,24 @@ const watermarkKey = (source: string) => `source:${source}:watermark`
 function contentHash(r: CatalogRecord): string {
   const { installs: _installs, ...content } = r
   return new Bun.CryptoHasher('sha256').update(JSON.stringify(content)).digest('hex')
+}
+
+/**
+ * Skill directories per lowercase repo: those of the catalog's available GitHub skills, and
+ * those the API read from its finds. A repo whose git tree GitHub truncates is read through
+ * these alone, so its skills are published and then kept on later runs.
+ */
+function knownSkillDirs(db: Database, finds: Map<string, Set<string>>): Map<string, Set<string>> {
+  const out = new Map([...finds].map(([repo, dirs]) => [repo, new Set(dirs)]))
+  const rows = db.query(`SELECT scope, json_extract(detail, '$.repo.dir') AS dir FROM resources
+    WHERE source = 'github-skills' AND scope IS NOT NULL AND unavailable_at IS NULL`).all() as { scope: string; dir: string | null }[]
+  for (const r of rows) {
+    if (!r.dir) continue
+    const set = out.get(r.scope) ?? new Set<string>()
+    set.add(r.dir)
+    out.set(r.scope, set)
+  }
+  return out
 }
 
 interface ExistingRow {
@@ -167,10 +185,13 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
     const http = upstreamClient(options.fetch, d.httpRetries ?? 3)
     const sources = await runDiscovery(d.db, d.sources, { http, now: now(), full: options.full ?? false, log }, runId, () => now().toISOString())
     let searchFinds: SearchFindsReport | undefined
+    let findDirs = new Map<string, Set<string>>()
     if (d.findsUrl) {
       // The API being down or a bad body costs this run's finds only; they are exported again next time.
       try {
-        searchFinds = applySearchFinds(d.db, await http.get(d.findsUrl).json<unknown>(), now().toISOString())
+        const body = await http.get(d.findsUrl).json<unknown>()
+        searchFinds = applySearchFinds(d.db, body, now().toISOString())
+        findDirs = searchFindDirs(body)
       } catch (e) {
         searchFinds = { status: 'failed', listings: 0, newListings: 0, repos: 0, newRepos: 0, skipped: 0, error: describeError(e) }
       }
@@ -182,7 +203,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
       .all() as { scope: string; syncedAt: string }[]
     seedRepos(d.db, scopes, startedAt)
     const picked = pickRepos(d.db, d.repoBudget ?? 200)
-    skills = { repos: picked.repos, installs: skillsShInstalls(d.db) }
+    skills = { repos: picked.repos, installs: skillsShInstalls(d.db), dirs: knownSkillDirs(db, findDirs) }
     hosted = []
     const hostedQueue: Record<string, HostedQueueReport> = {}
     for (const site of ['clawhub', 'skillhub'] as const) {
