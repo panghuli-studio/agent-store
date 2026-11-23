@@ -21,6 +21,23 @@ const WIDTHS = [390, 820, 1440]
 const LOCALES = ['zh', 'en']
 const listPath = `/store?category=skill&q=${encodeURIComponent(query)}`
 const found = '[data-supplement="found"]'
+// The command the detail shows for a GitHub skill (installCommand in apps/store/lib/resource.ts).
+const [, findRepo, findSkill] = /^github:([^/]+\/[^/]+)\/(.+)$/.exec(findId) ?? []
+const expectedCommand = findRepo ? `npx skills add ${findRepo} --skill ${findSkill}` : null
+// apps/store/lib/use-phone.ts: under 768px the store offers the command to copy instead of
+// the desktop install, so the primary action differs by width.
+const PHONE_MAX = 767
+
+/** The install card of a detail: the right primary action for the width, and the skill's command. */
+async function checkInstall(scope, width) {
+  const card = scope.locator('.install-card')
+  await card.waitFor({ timeout: 30_000 })
+  const primary = width <= PHONE_MAX ? '[data-copy-state]' : '[data-install-state]'
+  await card.locator(primary).first().waitFor({ timeout: 30_000 })
+  if (width <= PHONE_MAX && (await card.locator('[data-install-state]').count()) > 0) throw new Error('phone width shows the desktop install')
+  const shown = (await card.locator('.code-block pre').innerText()).trim()
+  if (expectedCommand && shown !== expectedCommand) throw new Error(`install command is "${shown}", not "${expectedCommand}"`)
+}
 const findLink = `${found} a[data-item-link="${findId}"]`
 
 const browser = await chromium.launch()
@@ -56,7 +73,7 @@ for (const locale of LOCALES) {
       await page.locator(findLink).click()
       const drawer = page.locator('[data-item-drawer]')
       await drawer.waitFor({ timeout: 30_000 })
-      await drawer.locator('[data-install-state]').first().waitFor({ timeout: 30_000 })
+      await checkInstall(drawer, width)
       await page.waitForLoadState('networkidle')
       await shot('flow-3-drawer', false)
 
@@ -72,7 +89,7 @@ for (const locale of LOCALES) {
       const href = await page.locator(findLink).getAttribute('href')
       const detail = await page.goto(base + href, { waitUntil: 'networkidle', timeout: 60_000 })
       if (!detail || detail.status() !== 200) throw new Error(`detail page: HTTP ${detail?.status()}`)
-      await page.locator('[data-install-state]').first().waitFor({ timeout: 30_000 })
+      await checkInstall(page, width)
       await shot('flow-5-page')
       console.log(`ok ${tag}`)
     } catch (e) {

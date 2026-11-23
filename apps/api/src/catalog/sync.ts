@@ -70,19 +70,30 @@ function contentHash(r: CatalogRecord): string {
 }
 
 /**
- * Skill directories per lowercase repo: those of the catalog's available GitHub skills, and
- * those the API read from its finds. A repo whose git tree GitHub truncates is read through
- * these alone, so its skills are published and then kept on later runs.
+ * Skill directories per lowercase repo, in the order a truncated repo is read through them:
+ * those the API read from its finds that the catalog does not hold yet, then the catalog's
+ * available GitHub skills, least recently synced first. A run reads at most a whole-repo
+ * scan's share of them and every skill it reads is synced, so the rest lead the next run.
+ * Each directory carries the upstream ids of the catalog skills in it.
  */
-function knownSkillDirs(db: Database, finds: Map<string, Set<string>>): Map<string, Set<string>> {
-  const out = new Map([...finds].map(([repo, dirs]) => [repo, new Set(dirs)]))
-  const rows = db.query(`SELECT scope, json_extract(detail, '$.repo.dir') AS dir FROM resources
-    WHERE source = 'github-skills' AND scope IS NOT NULL AND unavailable_at IS NULL`).all() as { scope: string; dir: string | null }[]
+function knownSkillDirs(db: Database, finds: Map<string, Set<string>>): Map<string, Map<string, string[]>> {
+  const catalog = new Map<string, Map<string, string[]>>()
+  const rows = db.query(`SELECT scope, upstream_id AS upstreamId, json_extract(detail, '$.repo.dir') AS dir FROM resources
+    WHERE source = 'github-skills' AND scope IS NOT NULL AND unavailable_at IS NULL
+    ORDER BY synced_at, id`).all() as { scope: string; upstreamId: string; dir: string | null }[]
   for (const r of rows) {
     if (!r.dir) continue
-    const set = out.get(r.scope) ?? new Set<string>()
-    set.add(r.dir)
-    out.set(r.scope, set)
+    const dirs = catalog.get(r.scope) ?? new Map<string, string[]>()
+    dirs.set(r.dir, [...(dirs.get(r.dir) ?? []), r.upstreamId])
+    catalog.set(r.scope, dirs)
+  }
+  const out = new Map<string, Map<string, string[]>>()
+  for (const repo of new Set([...finds.keys(), ...catalog.keys()])) {
+    const held = catalog.get(repo) ?? new Map<string, string[]>()
+    const dirs = new Map<string, string[]>()
+    for (const d of finds.get(repo) ?? []) if (!held.has(d)) dirs.set(d, [])
+    for (const [d, ids] of held) dirs.set(d, ids)
+    out.set(repo, dirs)
   }
   return out
 }

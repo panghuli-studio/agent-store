@@ -97,10 +97,11 @@ export interface SourceContext {
   }
   /**
    * Skill repos picked from the discovery queue for this run, and skills.sh install counts.
-   * dirs: known skill directories per lowercase repo (the catalog's and the API's finds),
-   * read one by one when GitHub truncates the repo's git tree.
+   * dirs: known skill directories per lowercase repo (the API's finds not yet published first,
+   * then the catalog's, least recently synced first), each with the upstream ids of the
+   * catalog skills in it; read one by one when GitHub truncates the repo's git tree.
    */
-  skills?: { repos: string[]; installs: Map<string, number>; dirs?: Map<string, Set<string>> }
+  skills?: { repos: string[]; installs: Map<string, number>; dirs?: Map<string, Map<string, string[]>> }
   /** Hosted skills picked from discovery.db for this run; absent without discovery. */
   hosted?: HostedCandidate[]
   log: (message: string) => void

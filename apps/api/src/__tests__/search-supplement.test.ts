@@ -1217,10 +1217,18 @@ describe('the catalog sync takes the finds in', () => {
     ])
     expect(discovery.query('SELECT last_status FROM repos WHERE full_name = ?').get(MONO)).toEqual({ last_status: 'named skills' })
 
-    // Published: the API hands the skill over and stops exporting its directory. The next run
-    // reads the repo through the directory the catalog holds; nothing in it is marked gone.
-    const second = sync()
-    expect((await second.run).sources[0]).toMatchObject({ source: 'github-skills', status: 'ok', unavailable: 0, errors: [] })
+    // Published; 14 days on the API has dropped the skill and exports no directory for it. The
+    // next runs, with that export and with the API unreachable, read the repo through the
+    // directory the catalog holds; nothing in it is marked gone.
+    advance(15 * 24 * HOUR)
+    openStore().prune(clock)
+    expect(s.resource(KANBAN)).toBeNull()
+    expect(((await (await app.fetch(new Request(FINDS_URL))).json()) as FoundExport).repos).toEqual([expect.objectContaining({ fullName: MONO, dirs: [] })])
+    for (const url of [FINDS_URL, undefined]) {
+      const next = sync(url)
+      expect((await next.run).sources[0]).toMatchObject({ source: 'github-skills', status: 'ok', unavailable: 0, errors: [] })
+      expect(decodeURIComponent(new URL(calls(next.upstream, 'api.github.com').at(-1)!).pathname)).toBe(`/repos/${MONO}/git/trees/${MONO_SHA}:${DIR}`)
+    }
     expect(catalog.query('SELECT id, unavailable_at FROM resources').all()).toEqual([{ id: KANBAN, unavailable_at: null }])
     catalog.close()
     discovery.close()
@@ -1243,47 +1251,72 @@ describe('the catalog sync takes the finds in', () => {
     expect(searchFindDirs({ error: 'nope' }).size).toBe(0)
   })
 
-  test('every directory exported for a truncated repo is published in one run, past the lookup limit of 40', async () => {
-    const many = Array.from({ length: 45 }, (_, i) => `skills/s${String(i).padStart(2, '0')}`)
-    const body = {
-      listings: [],
-      // Two rows of the same repo, as from two lookups: merged, nothing dropped.
-      repos: [
-        { fullName: MONO, source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: many.slice(0, 30) },
-        { fullName: 'Mono/Repo', source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: many.slice(30) },
-      ],
-    }
-    const routes: Route = (url) => {
-      if (url.hostname === 'api.test') return json(body)
-      if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/skills/`)) {
-        const name = url.pathname.split('/').at(-2)
-        return new Response(`---\nname: ${name}\ndescription: Skill ${name}\n---\n`)
+  describe('a truncated repo with many skill directories', () => {
+    const dirName = (i: number) => `skills/s${String(i).padStart(3, '0')}`
+    /** The sync against an export naming `exported` and a repo holding `present`. */
+    const setup = () => {
+      const catalog = openCatalogForWrite(join(dir, 'catalog.db'))
+      const discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
+      const sync = async (exported: string[] | null, present: string[]) => {
+        // Two rows of the same repo, as from two lookups: merged, nothing dropped.
+        const body = {
+          listings: [],
+          repos: [
+            { fullName: MONO, source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: (exported ?? []).slice(0, 10) },
+            { fullName: 'Mono/Repo', source: 'skillsmp', firstSeenAt: 'x', lastAttemptAt: null, lastStatus: null, dirs: (exported ?? []).slice(10) },
+          ],
+        }
+        const routes: Route = (url) => {
+          if (url.hostname === 'api.test') return exported ? json(body) : new Response('down', { status: 502 })
+          if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(`/${MONO}/${MONO_SHA}/skills/`)) {
+            const name = url.pathname.split('/').at(-2)
+            return new Response(`---\nname: ${name}\ndescription: Skill ${name}\n---\n`)
+          }
+          return undefined
+        }
+        const upstream = fakeFetch(routes, truncatedRoutes(Object.fromEntries(present.map((d) => [d, ['SKILL.md']]))))
+        advance(MINUTE)
+        const run = await syncCatalog(catalog, {
+          stars: false, sources: [githubSkillsSource()], fetch: upstream, github: octokitWith(upstream), now: () => clock,
+          discovery: { db: discovery, sources: [], findsUrl: FINDS_URL, httpRetries: 0 },
+        })
+        return { report: run.sources[0]!, treeCalls: calls(upstream, 'api.github.com').length - 2 }
       }
-      return undefined
+      const available = () => (catalog.query('SELECT count(*) AS n FROM resources WHERE unavailable_at IS NULL').get() as { n: number }).n
+      return { catalog, discovery, sync, available }
     }
-    const catalog = openCatalogForWrite(join(dir, 'catalog.db'))
-    const discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
-    const sync = (findsUrl?: string) => {
-      const upstream = fakeFetch(routes, truncatedRoutes(Object.fromEntries(many.map((d) => [d, ['SKILL.md']]))))
-      return syncCatalog(catalog, {
-        stars: false, sources: [githubSkillsSource()], fetch: upstream, github: octokitWith(upstream),
-        discovery: { db: discovery, sources: [], httpRetries: 0, ...(findsUrl ? { findsUrl } : {}) },
-      })
-    }
-    expect((await sync(FINDS_URL)).sources[0]).toMatchObject({ added: 45, errors: [], skipped: {} })
-    // Without the export (the API dropped them once published), the catalog's directories carry on.
-    expect((await sync()).sources[0]).toMatchObject({ added: 0, unavailable: 0, errors: [] })
-    expect(catalog.query('SELECT count(*) AS n FROM resources WHERE unavailable_at IS NULL').get()).toEqual({ n: 45 })
-    catalog.close()
-    discovery.close()
-  })
 
-  test('a truncated repo is read through at most as many directories as a whole-repo scan takes', async () => {
-    const f = fakeFetch(truncatedRoutes({}))
-    const dirs = new Set(Array.from({ length: 502 }, (_, i) => `skills/s${String(i).padStart(3, '0')}`))
-    await expect(scanRepo(octokitWith(f), f, MONO, new Map(), { dirs })).rejects.toThrow('no directory the finds name holds a SKILL.md')
-    // The commit, the truncated tree, then one tree request for each of the first 500.
-    expect(calls(f, 'api.github.com')).toHaveLength(2 + 500)
+    test('past one run\'s share of 500, the rest lead the next run, also with the API down, until each is read', async () => {
+      const all = Array.from({ length: 502 }, (_, i) => dirName(i))
+      const { catalog, discovery, sync, available } = setup()
+      const first = await sync(all, all)
+      expect(first.report).toMatchObject({ added: 500, errors: [], skipped: { 'skill directory left for a later run': 2 } })
+      expect(first.treeCalls).toBe(500)
+      const firstStamp = (catalog.query('SELECT min(synced_at) AS t FROM resources').get() as { t: string }).t
+      // The two not yet published come first; 498 of the published fill the share.
+      expect((await sync(all, all)).report).toMatchObject({ added: 2, unavailable: 0, errors: [] })
+      expect(available()).toBe(502)
+      // The API down: the catalog's directories alone, least recently synced first.
+      expect((await sync(null, all)).report).toMatchObject({ added: 0, unavailable: 0, errors: [] })
+      expect(catalog.query('SELECT count(*) AS n FROM resources WHERE synced_at <= ?').get(firstStamp)).toEqual({ n: 0 })
+      expect(available()).toBe(502)
+      catalog.close()
+      discovery.close()
+    })
+
+    test('a skill whose directory is gone is marked gone; the others stay', async () => {
+      const three = [dirName(0), dirName(1), dirName(2)]
+      const { catalog, discovery, sync, available } = setup()
+      expect((await sync(three, three)).report).toMatchObject({ added: 3 })
+      expect((await sync(null, three.slice(1))).report).toMatchObject({ unavailable: 1, errors: [] })
+      expect(catalog.query('SELECT id, unavailable_reason FROM resources WHERE unavailable_at IS NOT NULL').all())
+        .toEqual([{ id: `github:${MONO}/s000`, unavailable_reason: 'skill directory gone from its repo' }])
+      // None left: the run fails for the repo, and the skills it names gone are marked gone.
+      expect((await sync(null, [])).report).toMatchObject({ unavailable: 2, errors: [expect.stringContaining('no directory the finds name holds a SKILL.md')] })
+      expect(available()).toBe(0)
+      catalog.close()
+      discovery.close()
+    })
   })
 
   test('garbage in the export is skipped, and an unreachable API costs only that run', async () => {
