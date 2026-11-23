@@ -139,9 +139,18 @@ async function readSkillDirs(
   return { read: read.filter((d): d is { dir: string; sha: string; entries: TreeEntry[] } => d !== null), missing }
 }
 
-/** A truncated repo none of whose given directories holds a skill; `missing` names those that are gone. */
+/** What a read of a truncated repo through its directories tried, and what it found. */
+export interface DirRead {
+  tried: string[]
+  /** Hold a SKILL.md. */
+  read: string[]
+  /** Gone, no directory, or no SKILL.md at this commit. */
+  missing: string[]
+}
+
+/** A truncated repo none of whose given directories holds a skill. */
 export class MissingSkillDirsError extends Error {
-  constructor(message: string, readonly missing: string[]) {
+  constructor(message: string, readonly dirs: DirRead) {
     super(message)
   }
 }
@@ -153,8 +162,8 @@ export interface RepoScan {
   skipped: Record<string, number>
   /** Only the skill directories `limits.named` asked for were read, not the whole repo. */
   subset: boolean
-  /** Of a truncated repo read through `limits.dirs`: the directories that hold no skill at this commit. */
-  missing?: string[]
+  /** Of a truncated repo read through `limits.dirs`. */
+  dirs?: DirRead
 }
 
 /** Reads one repo at its default branch head and turns each skill directory into a record. */
@@ -173,6 +182,8 @@ export async function scanRepo(
    */
   limits: { maxSkills?: number; named?: Set<string>; dirs?: Iterable<string> } = {},
 ): Promise<RepoScan> {
+  // Once, in the order given: the truncated branch reads them in turn, the other matches against them.
+  const given = new Set([...(limits.dirs ?? [])].filter((d) => d !== ''))
   const [owner, repo] = fullName.split('/') as [string, string]
   const scope = fullName.toLowerCase()
   const skipped: Record<string, number> = {}
@@ -188,10 +199,10 @@ export async function scanRepo(
 
   let dirs: string[]
   let subset = false
-  let missing: string[] | undefined
+  let dirRead: DirRead | undefined
   if (tree.truncated) {
     const truncated = `${fullName}: git tree is truncated (too large to scan)`
-    let wanted = [...new Set(limits.dirs ?? [])].filter((d) => d !== '')
+    let wanted = [...given]
     if (wanted.length === 0) throw new Error(truncated)
     if (limits.maxSkills === undefined && wanted.length > MAX_SKILLS_PER_REPO) {
       // One run's share, taken before one tree request per directory; the caller orders the
@@ -200,9 +211,9 @@ export async function scanRepo(
       wanted = wanted.slice(0, MAX_SKILLS_PER_REPO)
     }
     if (limits.maxSkills !== undefined && wanted.length > limits.maxSkills) throw new RepoTooLargeError(fullName, wanted.length, limits.maxSkills)
-    const { read, missing: gone } = await readSkillDirs(github, owner, repo, commit.sha, wanted)
-    missing = gone
-    if (read.length === 0) throw new MissingSkillDirsError(`${truncated}; no directory the finds name holds a SKILL.md`, gone)
+    const { read, missing } = await readSkillDirs(github, owner, repo, commit.sha, wanted)
+    dirRead = { tried: wanted, read: read.map((d) => d.dir), missing }
+    if (read.length === 0) throw new MissingSkillDirsError(`${truncated}; no directory the finds name holds a SKILL.md`, dirRead)
     entries = read.flatMap((d) => d.entries)
     for (const d of read) treeShaOf.set(d.dir, d.sha)
     dirs = read.map((d) => d.dir)
@@ -210,7 +221,7 @@ export async function scanRepo(
   } else {
     dirs = findSkillDirs(entries)
     if (limits.maxSkills !== undefined && dirs.length > limits.maxSkills) {
-      const named = dirs.filter((d) => limits.dirs?.has(d) || limits.named?.has((d.split('/').pop() ?? '').toLowerCase()))
+      const named = dirs.filter((d) => given.has(d) || limits.named?.has((d.split('/').pop() ?? '').toLowerCase()))
       if (named.length === 0 || named.length > limits.maxSkills) throw new RepoTooLargeError(fullName, dirs.length, limits.maxSkills)
       dirs = named
       subset = true
@@ -293,13 +304,22 @@ export async function scanRepo(
       detail,
     })
   }
-  return { scope, records, skipped, subset, ...(missing ? { missing } : {}) }
+  return { scope, records, skipped, subset, ...(dirRead ? { dirs: dirRead } : {}) }
 }
 
-/** The catalog skills whose directory a truncated-repo read found gone are no longer listed. */
-function removeMissing(run: SourceRun, dirs: Map<string, string[]> | undefined, missing: string[] | undefined): void {
-  for (const dir of missing ?? []) {
-    for (const upstreamId of dirs?.get(dir) ?? []) run.removed.push({ upstreamId, reason: 'skill directory gone from its repo' })
+/**
+ * Records which directories of a truncated repo the run tried, so the next run starts with
+ * the others, and (with `remove`) no longer lists the catalog skills whose directory is gone.
+ * Those stay in the queue: a skill whose directory comes back is read and restored.
+ */
+function noteDirs(run: SourceRun, repo: string, owners: Map<string, string[]> | undefined, d: DirRead | undefined, remove: boolean): void {
+  if (!d) return
+  const missing = new Set(d.missing)
+  const read = new Set(d.read)
+  for (const dir of d.tried) {
+    run.dirAttempts!.push({ repo, dir, status: read.has(dir) ? 'skill' : missing.has(dir) ? 'missing' : 'unreadable' })
+    if (!remove || !missing.has(dir)) continue
+    for (const upstreamId of owners?.get(dir) ?? []) run.removed.push({ upstreamId, reason: 'skill directory gone from its repo' })
   }
 }
 
@@ -313,7 +333,7 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
     site: 'github',
     kind: 'skill',
     async run(ctx): Promise<SourceRun> {
-      const run: SourceRun = { records: [], removed: [], skipped: {}, errors: [], coverage: { mode: 'scoped', scopes: [] }, attempted: [] }
+      const run: SourceRun = { records: [], removed: [], skipped: {}, errors: [], coverage: { mode: 'scoped', scopes: [] }, attempted: [], dirAttempts: [] }
       const installs = ctx.skills?.installs ?? options.installs ?? new Map<string, number>()
       let repos = ctx.skills?.repos ?? options.repos ?? ctx.state.knownScopes
       const maxRepos = options.maxRepos ?? 200
@@ -328,9 +348,10 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
         repos,
         async (fullName) => {
           if (rateLimited) { addSkip(run.skipped, 'repo not scanned: GitHub rate limit'); return }
+          let dirs: Map<string, string[]> | undefined
           try {
-            const dirs = ctx.skills?.dirs?.get(fullName.toLowerCase())
-            const scan = await scanRepo(ctx.github, ctx.fetch, fullName, installs, dirs ? { dirs: dirs.keys() } : {})
+            dirs = ctx.skills?.dirsOf?.(fullName.toLowerCase())
+            const scan = await scanRepo(ctx.github, ctx.fetch, fullName, installs, dirs?.size ? { dirs: dirs.keys() } : {})
             run.records.push(...scan.records)
             for (const [k, v] of Object.entries(scan.skipped)) run.skipped[k] = (run.skipped[k] ?? 0) + v
             const failed = scan.skipped[DOWNLOAD_FAILED] ?? 0
@@ -338,10 +359,11 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
               // Not reconciled: a skill whose SKILL.md did not download is not gone.
               run.errors.push(`${fullName}: ${failed} SKILL.md downloads failed; its skills keep their previous state`)
               run.attempted!.push({ repo: scan.scope, status: 'partial' })
+              noteDirs(run, scan.scope, dirs, scan.dirs, false)
             } else if (scan.subset) {
               // Truncated tree, read through known directories: the rest of the repo was not
               // seen, so only skills whose own directory is gone are marked gone.
-              removeMissing(run, dirs, scan.missing)
+              noteDirs(run, scan.scope, dirs, scan.dirs, true)
               run.attempted!.push({ repo: scan.scope, status: scan.records.length ? 'named skills' : 'no skills' })
             } else {
               scopes.push(scan.scope)
@@ -349,7 +371,7 @@ export function githubSkillsSource(options: { repos?: string[]; maxRepos?: numbe
             }
           } catch (e) {
             if (e instanceof MissingSkillDirsError) {
-              removeMissing(run, ctx.skills?.dirs?.get(fullName.toLowerCase()), e.missing)
+              noteDirs(run, fullName.toLowerCase(), dirs, e.dirs, true)
               run.errors.push(`${fullName}: ${e.message}`)
               run.attempted!.push({ repo: fullName, status: 'error' })
             } else if (isRateLimit(e)) {

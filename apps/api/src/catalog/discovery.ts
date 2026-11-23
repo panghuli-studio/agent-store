@@ -70,6 +70,19 @@ const MIGRATIONS: string[] = [
   ALTER TABLE listings ADD COLUMN content_version TEXT;
   ALTER TABLE listings ADD COLUMN content_status TEXT;
   `,
+  `
+  -- Skill directories of repos whose git tree GitHub truncates, read one by one: those the
+  -- API's search finds read and those of the catalog's skills. last_attempt_at NULL means
+  -- never tried; the least recently tried come first, so every one is read in turn.
+  CREATE TABLE repo_dirs (
+    full_name       TEXT NOT NULL,            -- lowercase owner/repo
+    dir             TEXT NOT NULL,
+    first_seen_at   TEXT NOT NULL,
+    last_attempt_at TEXT,
+    last_status     TEXT,                     -- skill, missing, unreadable
+    PRIMARY KEY (full_name, dir)
+  ) WITHOUT ROWID;
+  `,
 ]
 
 /** Snapshots older than this are dropped; listings and repos are kept for good. */
@@ -359,7 +372,9 @@ export function applySearchFinds(db: Database, body: unknown, stamp: string): Se
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source, listing_id) DO NOTHING`)
   const addRepo = db.query(`INSERT INTO repos (full_name, first_seen_at, discovered_by) VALUES (?, ?, 'search')
     ON CONFLICT (full_name) DO NOTHING`)
+  const dirs = searchFindDirs(body)
   db.transaction(() => {
+    seedSkillDirs(db, [...dirs].flatMap(([repo, ds]) => [...ds].map((dir) => ({ repo, dir }))), stamp)
     for (const item of root['listings'] as unknown[]) {
       const l = rec(item)
       const source = text(l['source'])
@@ -407,6 +422,28 @@ export function searchFindDirs(body: unknown): Map<string, Set<string>> {
     out.set(key, new Set([...(out.get(key) ?? []), ...dirs]))
   }
   return out
+}
+
+/** Skill directories join the queue of their repo once; ones already there keep their turn. */
+export function seedSkillDirs(db: Database, dirs: Array<{ repo: string; dir: string }>, stamp: string): void {
+  const q = db.query('INSERT INTO repo_dirs (full_name, dir, first_seen_at) VALUES (?, ?, ?) ON CONFLICT (full_name, dir) DO NOTHING')
+  db.transaction(() => {
+    for (const d of dirs) if (d.dir) q.run(d.repo.toLowerCase(), d.dir, stamp)
+  })()
+}
+
+/** A repo's skill directories, never tried first, then the least recently tried. */
+export function skillDirsOf(db: Database, repo: string): string[] {
+  return (db.query(`SELECT dir FROM repo_dirs WHERE full_name = ?
+    ORDER BY last_attempt_at IS NOT NULL, last_attempt_at, first_seen_at, dir`).all(repo.toLowerCase()) as { dir: string }[]).map((r) => r.dir)
+}
+
+export function recordDirAttempts(db: Database, attempts: Array<{ repo: string; dir: string; status: string }>, stamp: string): void {
+  const q = db.query(`INSERT INTO repo_dirs (full_name, dir, first_seen_at, last_attempt_at, last_status) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (full_name, dir) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, last_status = excluded.last_status`)
+  db.transaction(() => {
+    for (const a of attempts) q.run(a.repo.toLowerCase(), a.dir, stamp, stamp, a.status)
+  })()
 }
 
 /** Repos the catalog already holds skills from join the queue as known repos. */

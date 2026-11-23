@@ -62,6 +62,8 @@ export interface SourceRun {
   watermark?: string | null
   /** Scopes the run tried, with how it went; rate-limited ones are left out so they stay due. */
   attempted?: Array<{ repo: string; status: string }>
+  /** Skill directories of truncated repos the run tried, with how it went (skill, missing, unreadable). */
+  dirAttempts?: Array<{ repo: string; dir: string; status: string }>
   /** Hosted skills the run read, with how it went; ones it did not get to are left out so they stay due. */
   hostedChecks?: HostedCheck[]
 }
@@ -97,11 +99,11 @@ export interface SourceContext {
   }
   /**
    * Skill repos picked from the discovery queue for this run, and skills.sh install counts.
-   * dirs: known skill directories per lowercase repo (the API's finds not yet published first,
-   * then the catalog's, least recently synced first), each with the upstream ids of the
-   * catalog skills in it; read one by one when GitHub truncates the repo's git tree.
+   * dirsOf: a repo's known skill directories in the order to read them (discovery.db's
+   * repo_dirs queue), each with the upstream ids of the catalog skills in it; read one by
+   * one when GitHub truncates the repo's git tree.
    */
-  skills?: { repos: string[]; installs: Map<string, number>; dirs?: Map<string, Map<string, string[]>> }
+  skills?: { repos: string[]; installs: Map<string, number>; dirsOf?: (repo: string) => Map<string, string[]> }
   /** Hosted skills picked from discovery.db for this run; absent without discovery. */
   hosted?: HostedCandidate[]
   log: (message: string) => void

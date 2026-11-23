@@ -1253,10 +1253,11 @@ describe('the catalog sync takes the finds in', () => {
 
   describe('a truncated repo with many skill directories', () => {
     const dirName = (i: number) => `skills/s${String(i).padStart(3, '0')}`
-    /** The sync against an export naming `exported` and a repo holding `present`. */
+    const many = Array.from({ length: 502 }, (_, i) => dirName(i))
+    /** The sync against an export naming `exported` (null: the API is down) and a repo holding `present`. */
     const setup = () => {
       const catalog = openCatalogForWrite(join(dir, 'catalog.db'))
-      const discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
+      let discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
       const sync = async (exported: string[] | null, present: string[]) => {
         // Two rows of the same repo, as from two lookups: merged, nothing dropped.
         const body = {
@@ -1282,41 +1283,70 @@ describe('the catalog sync takes the finds in', () => {
         })
         return { report: run.sources[0]!, treeCalls: calls(upstream, 'api.github.com').length - 2 }
       }
+      /** A new process: discovery.db closed and opened again, as the workflow downloads it. */
+      const reopen = () => {
+        discovery.close()
+        discovery = openDiscoveryForWrite(join(dir, 'discovery.db'))
+      }
       const available = () => (catalog.query('SELECT count(*) AS n FROM resources WHERE unavailable_at IS NULL').get() as { n: number }).n
-      return { catalog, discovery, sync, available }
+      const close = () => {
+        catalog.close()
+        discovery.close()
+      }
+      return { catalog, sync, reopen, available, close }
     }
 
-    test('past one run\'s share of 500, the rest lead the next run, also with the API down, until each is read', async () => {
-      const all = Array.from({ length: 502 }, (_, i) => dirName(i))
-      const { catalog, discovery, sync, available } = setup()
-      const first = await sync(all, all)
+    test('past one run\'s share of 500, the rest are read next run from discovery.db, with the API down from then on', async () => {
+      const { catalog, sync, reopen, available, close } = setup()
+      const first = await sync(many, many)
       expect(first.report).toMatchObject({ added: 500, errors: [], skipped: { 'skill directory left for a later run': 2 } })
       expect(first.treeCalls).toBe(500)
       const firstStamp = (catalog.query('SELECT min(synced_at) AS t FROM resources').get() as { t: string }).t
-      // The two not yet published come first; 498 of the published fill the share.
-      expect((await sync(all, all)).report).toMatchObject({ added: 2, unavailable: 0, errors: [] })
+      // A new process, two weeks on (the API has dropped its unpublished finds), the API down.
+      reopen()
+      advance(15 * 24 * HOUR)
+      expect((await sync(null, many)).report).toMatchObject({ added: 2, unavailable: 0, errors: [] })
       expect(available()).toBe(502)
-      // The API down: the catalog's directories alone, least recently synced first.
-      expect((await sync(null, all)).report).toMatchObject({ added: 0, unavailable: 0, errors: [] })
+      // Least recently tried first: the two read only in the first run lead the third.
+      expect((await sync(null, many)).report).toMatchObject({ added: 0, unavailable: 0, errors: [] })
       expect(catalog.query('SELECT count(*) AS n FROM resources WHERE synced_at <= ?').get(firstStamp)).toEqual({ n: 0 })
-      expect(available()).toBe(502)
-      catalog.close()
-      discovery.close()
+      close()
     })
 
-    test('a skill whose directory is gone is marked gone; the others stay', async () => {
-      const three = [dirName(0), dirName(1), dirName(2)]
-      const { catalog, discovery, sync, available } = setup()
+    test('directories that hold no skill take their turn and hand it on; the valid ones after them are read next run', async () => {
+      const { sync, reopen, available, close } = setup()
+      const first = await sync(many, many.slice(500))
+      expect(first.report).toMatchObject({ added: 0, errors: [expect.stringContaining('no directory the finds name holds a SKILL.md')] })
+      reopen()
+      expect((await sync(null, many.slice(500))).report).toMatchObject({ added: 2, errors: [] })
+      expect(available()).toBe(2)
+      close()
+    })
+
+    test('a skill whose directory is gone is marked gone, and restored when it comes back', async () => {
+      const three = many.slice(0, 3)
+      const { catalog, sync, available, close } = setup()
       expect((await sync(three, three)).report).toMatchObject({ added: 3 })
       expect((await sync(null, three.slice(1))).report).toMatchObject({ unavailable: 1, errors: [] })
       expect(catalog.query('SELECT id, unavailable_reason FROM resources WHERE unavailable_at IS NOT NULL').all())
         .toEqual([{ id: `github:${MONO}/s000`, unavailable_reason: 'skill directory gone from its repo' }])
-      // None left: the run fails for the repo, and the skills it names gone are marked gone.
-      expect((await sync(null, [])).report).toMatchObject({ unavailable: 2, errors: [expect.stringContaining('no directory the finds name holds a SKILL.md')] })
+      expect((await sync(null, three)).report).toMatchObject({ restored: 1, errors: [] })
+      expect(available()).toBe(3)
+      // All gone: the repo is an error this run and its skills are marked gone; all back, all restored.
+      expect((await sync(null, [])).report).toMatchObject({ unavailable: 3, errors: [expect.stringContaining('no directory the finds name holds a SKILL.md')] })
       expect(available()).toBe(0)
-      catalog.close()
-      discovery.close()
+      expect((await sync(null, three)).report).toMatchObject({ restored: 3, errors: [] })
+      expect(available()).toBe(3)
+      close()
     })
+  })
+
+  test('directories given as any iterable pick the named skills of a whole repo over the limit', async () => {
+    const names = Array.from({ length: 45 }, (_, i) => `s${String(i).padStart(2, '0')}`)
+    const f = fakeFetch(repoRoutes('big/many', 'd'.repeat(40), names))
+    const scan = await scanRepo(octokitWith(f), f, 'big/many', new Map(), { maxSkills: 40, dirs: ['skills/s03'][Symbol.iterator]() })
+    expect(scan.subset).toBe(true)
+    expect(scan.records.map((r) => r.upstreamId)).toEqual(['big/many/s03'])
   })
 
   test('garbage in the export is skipped, and an unreachable API costs only that run', async () => {
