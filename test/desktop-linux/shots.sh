@@ -180,7 +180,8 @@ CLAWHUB_SLUG=$(hosted_slug "$CLAWHUB_SKILL_ID")
 check "the desktop installed the ClawHub skill: every file has the listed SHA-256, both agents link to it" '[ -n "$CLAWHUB_SLUG" ]'
 install_link "$SKILLHUB_SKILL_ID"
 shot 05e-skillhub-skill-confirm
-xdotool key Escape
+# Activate the focused Cancel button; Escape also dismisses the Discover pane.
+xdotool key Return
 sleep 6
 shot 05f-skillhub-discover-detail
 stop_app
@@ -196,8 +197,8 @@ check "the hosted skills were uninstalled again" '[ -n "$CLAWHUB_SLUG" ] && [ -n
 # 5. MCP from an npm package: the preview names the npx launch.
 install_link "$NPM_MCP_ID"
 shot 06-mcp-npm-confirm
-# Cancel leaves the entry selected on Discover behind the dialog.
-xdotool key Escape
+# Activate the focused Cancel button to keep the Discover detail visible.
+xdotool key Return
 sleep 6
 shot 06b-discover-detail
 install_link "$NPM_MCP_ID"
