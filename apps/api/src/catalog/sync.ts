@@ -5,7 +5,7 @@ import { countAvailable, getMeta, setMeta, CATALOG_SCHEMA_VERSION } from './db'
 import { encodeDetail } from './detail-codec'
 import {
   applySearchFinds, beginRun, discoveryTotals, linkResources, pickHosted, pickRepos, pruneSnapshots, recordAttempts, recordHostedChecks,
-  runDiscovery, seedRepos, skillsShInstalls, type DiscoveryReport, type HostedQueueReport, type DiscoverySource, type SearchFindsReport,
+  recordDirAttempts, runDiscovery, seedRepos, seedSkillDirs, skillDirsOf, skillsShInstalls, type DiscoveryReport, type HostedQueueReport, type DiscoverySource, type SearchFindsReport,
 } from './discovery'
 import { describeError, upstreamClient } from './http'
 import { refreshStars, type StarsOptions, type StarsReport } from './stars'
@@ -67,6 +67,24 @@ const watermarkKey = (source: string) => `source:${source}:watermark`
 function contentHash(r: CatalogRecord): string {
   const { installs: _installs, ...content } = r
   return new Bun.CryptoHasher('sha256').update(JSON.stringify(content)).digest('hex')
+}
+
+/**
+ * Seeds discovery.db's directory queue with the catalog's GitHub skills, unavailable ones
+ * included so a skill whose directory comes back is read again, and answers a repo's
+ * directories in queue order, each with the upstream ids of the catalog skills in it.
+ */
+function skillDirs(db: Database, discoveryDb: Database, stamp: string): (repo: string) => Map<string, string[]> {
+  const rows = db.query(`SELECT scope, upstream_id AS upstreamId, json_extract(detail, '$.repo.dir') AS dir FROM resources
+    WHERE source = 'github-skills' AND scope IS NOT NULL`).all() as { scope: string; upstreamId: string; dir: string | null }[]
+  const owners = new Map<string, string[]>()
+  for (const r of rows) {
+    if (!r.dir) continue
+    const key = `${r.scope}\u0000${r.dir}`
+    owners.set(key, [...(owners.get(key) ?? []), r.upstreamId])
+  }
+  seedSkillDirs(discoveryDb, rows.map((r) => ({ repo: r.scope, dir: r.dir ?? '' })), stamp)
+  return (repo) => new Map(skillDirsOf(discoveryDb, repo).map((dir) => [dir, owners.get(`${repo}\u0000${dir}`) ?? []]))
 }
 
 interface ExistingRow {
@@ -182,7 +200,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
       .all() as { scope: string; syncedAt: string }[]
     seedRepos(d.db, scopes, startedAt)
     const picked = pickRepos(d.db, d.repoBudget ?? 200)
-    skills = { repos: picked.repos, installs: skillsShInstalls(d.db) }
+    skills = { repos: picked.repos, installs: skillsShInstalls(d.db), dirsOf: skillDirs(db, d.db, startedAt) }
     hosted = []
     const hostedQueue: Record<string, HostedQueueReport> = {}
     for (const site of ['clawhub', 'skillhub'] as const) {
@@ -227,6 +245,7 @@ export async function syncCatalog(db: Database, options: SyncOptions): Promise<S
       const stamp = now().toISOString()
       db.transaction(() => applyRun(db, source, run, stamp, report))()
       if (d && run.attempted) recordAttempts(d.db, run.attempted, stamp)
+      if (d && run.dirAttempts) recordDirAttempts(d.db, run.dirAttempts, stamp)
       if (d && run.hostedChecks) recordHostedChecks(d.db, run.hostedChecks, stamp)
     } catch (e) {
       report.status = 'failed'

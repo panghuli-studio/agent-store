@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import type { KyInstance } from 'ky'
+import { GITHUB_DIR } from './search-sources'
 import { githubRepoOf } from './stars'
 import type { HostedCandidate, HostedCheck } from './types'
 
@@ -68,6 +69,19 @@ const MIGRATIONS: string[] = [
   ALTER TABLE listings ADD COLUMN content_checked_at TEXT;
   ALTER TABLE listings ADD COLUMN content_version TEXT;
   ALTER TABLE listings ADD COLUMN content_status TEXT;
+  `,
+  `
+  -- Skill directories of repos whose git tree GitHub truncates, read one by one: those the
+  -- API's search finds read and those of the catalog's skills. last_attempt_at NULL means
+  -- never tried; the least recently tried come first, so every one is read in turn.
+  CREATE TABLE repo_dirs (
+    full_name       TEXT NOT NULL,            -- lowercase owner/repo
+    dir             TEXT NOT NULL,
+    first_seen_at   TEXT NOT NULL,
+    last_attempt_at TEXT,
+    last_status     TEXT,                     -- skill, missing, unreadable
+    PRIMARY KEY (full_name, dir)
+  ) WITHOUT ROWID;
   `,
 ]
 
@@ -358,7 +372,9 @@ export function applySearchFinds(db: Database, body: unknown, stamp: string): Se
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source, listing_id) DO NOTHING`)
   const addRepo = db.query(`INSERT INTO repos (full_name, first_seen_at, discovered_by) VALUES (?, ?, 'search')
     ON CONFLICT (full_name) DO NOTHING`)
+  const dirs = searchFindDirs(body)
   db.transaction(() => {
+    seedSkillDirs(db, [...dirs].flatMap(([repo, ds]) => [...ds].map((dir) => ({ repo, dir }))), stamp)
     for (const item of root['listings'] as unknown[]) {
       const l = rec(item)
       const source = text(l['source'])
@@ -384,6 +400,50 @@ export function applySearchFinds(db: Database, body: unknown, stamp: string): Se
     }
   })()
   return report
+}
+
+/**
+ * The skill directories the API read and serves, per lowercase repo, from its export
+ * (`repos[].dirs`). The sync reads a repo whose git tree GitHub truncates through these.
+ * Unsafe paths and malformed repos are dropped; rows naming the same repo are merged. All
+ * of a repo's directories are kept: a scan caps them as it caps a whole-repo scan.
+ */
+export function searchFindDirs(body: unknown): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  const root = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+  if (!Array.isArray(root['repos'])) return out
+  for (const item of root['repos'] as unknown[]) {
+    const r = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {}
+    const name = typeof r['fullName'] === 'string' && /^[^/]+\/[^/]+$/.test(r['fullName']) ? githubRepoOf(`https://github.com/${r['fullName']}`) : null
+    if (!name || !Array.isArray(r['dirs'])) continue
+    const dirs = (r['dirs'] as unknown[]).filter((d): d is string => typeof d === 'string' && GITHUB_DIR.test(d))
+    if (dirs.length === 0) continue
+    const key = name.toLowerCase()
+    out.set(key, new Set([...(out.get(key) ?? []), ...dirs]))
+  }
+  return out
+}
+
+/** Skill directories join the queue of their repo once; ones already there keep their turn. */
+export function seedSkillDirs(db: Database, dirs: Array<{ repo: string; dir: string }>, stamp: string): void {
+  const q = db.query('INSERT INTO repo_dirs (full_name, dir, first_seen_at) VALUES (?, ?, ?) ON CONFLICT (full_name, dir) DO NOTHING')
+  db.transaction(() => {
+    for (const d of dirs) if (d.dir) q.run(d.repo.toLowerCase(), d.dir, stamp)
+  })()
+}
+
+/** A repo's skill directories, never tried first, then the least recently tried. */
+export function skillDirsOf(db: Database, repo: string): string[] {
+  return (db.query(`SELECT dir FROM repo_dirs WHERE full_name = ?
+    ORDER BY last_attempt_at IS NOT NULL, last_attempt_at, first_seen_at, dir`).all(repo.toLowerCase()) as { dir: string }[]).map((r) => r.dir)
+}
+
+export function recordDirAttempts(db: Database, attempts: Array<{ repo: string; dir: string; status: string }>, stamp: string): void {
+  const q = db.query(`INSERT INTO repo_dirs (full_name, dir, first_seen_at, last_attempt_at, last_status) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (full_name, dir) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, last_status = excluded.last_status`)
+  db.transaction(() => {
+    for (const a of attempts) q.run(a.repo.toLowerCase(), a.dir, stamp, stamp, a.status)
+  })()
 }
 
 /** Repos the catalog already holds skills from join the queue as known repos. */

@@ -97,7 +97,7 @@ SkillsMP 没有接入：公开接口必须带关键词或作者，不支持通�
 
 **快照**：每次运行在 `runs` 里记一行，榜单上的每个条目按「条目、榜单、口径、运行」写一行 `snapshots`（名次和数值）；目录页读到的条目只更新 `listings` 里的最新值，不写快照。快照保留 180 天，`listings` 和仓库队列永久保留。站点失败时不删除、不标记它以前列出的任何条目，`catalog.db` 里的技能也不会因此标为不可用。
 
-**扫描队列**：技能仓库来自各站点条目的 GitHub 仓库，加上 `catalog.db` 里已有技能的仓库，没有固定种子名单。每次最多扫 200 个仓库：从没试过的新仓库最多占一半（先发现的先扫，同一批里榜单名次高的先扫），其余给上次尝试最早的已知仓库，一方用不完的名额给另一方，所以新仓库不会被已知仓库挤掉，已知仓库也会轮流更新。碰到 GitHub 限流时剩下的仓库不算尝试过，下次仍然排在前面。扫过的仓库里不再出现的技能标为不可用；只要该仓库有一个 `SKILL.md` 没下载下来，这次就不对它做这一步，它的技能保持上一版的状态。
+**扫描队列**：技能仓库来自各站点条目的 GitHub 仓库，加上 `catalog.db` 里已有技能的仓库，没有固定种子名单。每次最多扫 200 个仓库：从没试过的新仓库最多占一半（先发现的先扫，同一批里榜单名次高的先扫），其余给上次尝试最早的已知仓库，一方用不完的名额给另一方，所以新仓库不会被已知仓库挤掉，已知仓库也会轮流更新。碰到 GitHub 限流时剩下的仓库不算尝试过，下次仍然排在前面。扫过的仓库里不再出现的技能标为不可用；只要该仓库有一个 `SKILL.md` 没下载下来，这次就不对它做这一步，它的技能保持上一版的状态。GitHub 截断目录树的仓库（如 `openclaw/openclaw`）不能整仓库扫，改为按 `discovery.db` 的 `repo_dirs` 队列里这个仓库的技能目录逐个读（每个目录一次请求），报告里记为 `named skills`。队列里是 API 补搜读到并导出的目录（导入一次就存下，之后 API 不可达或清掉它都不影响），以及 `catalog.db` 里这个仓库全部技能的目录（包括已标为不可用的）。从没试过的先读，其余按上次尝试从早到晚；每次最多读 500 个（和整仓库扫描的上限相同），每个试过的目录都记下尝试时间和结果（`skill`、`missing`、`unreadable`；GitHub 对单个目录出错时只记这个目录 `unreadable`，同批其余目录照读），所以不管读没读出技能，没轮到的下次排在前面；碰到 GitHub 限额时这一批都不算试过。目录在这次提交里不存在或没有 `SKILL.md` 时，`catalog.db` 里这个目录的技能标为不可用，目录仍留在队列里，之后恢复了就再读出来、恢复可用；没读的目录看不见，其中的技能不动。队列里没有这个仓库的目录，或这次读的目录都没有 `SKILL.md` 时记为 `error`。
 
 **报告**：`report.json` 的 `discovery` 字段和 job summary 的「Skill discovery」一节写每个站点的状态、读到的条目数、新条目、数值有变的条目、首次上榜（`newOnBoards`，附示例）、名次上升（`rose`，附上升最多的几条）、带出的新仓库、耗时和最近成功时间（`lastSuccessAt`），以及每个榜单和目录读了几页、多少条、总数、为什么停（读到底 `end`、到了每次的页数 `depth`、站点只给这么多 `site-limit`、出错 `error`、被限流 `rate-limited`）和下次从哪继续；另有扫描队列的新旧仓库数、仍在等待的新仓库数，以及条目数、去重后的技能数、多站重复的技能数、已关联到 `catalog.db` 的条目数和快照数。
 
@@ -186,7 +186,9 @@ API 本地的 `catalog.db` 是下载来的只读副本，每次发布都会被�
 
 - 同一个搜索词在查询进行中再次到来，不会再发请求，共用那一次；查完后在上表的时间内直接用记录的结论，「没查到」同样记录。「全部站点失败」只在内存里记 30 秒。
 - 以后的搜索（包括别的搜索词）先看 `found_listings` 和 `found_resources` 里名称或描述包含全部搜索词的条目，够用就不再问站点。
-- `GET /api/discovery/export` 导出 `found_listings` 和 `found_repos`（各最多 5000 条，最近的在前）；`repos` 每条带 API 最近一次读它的时间和结果（`lastAttemptAt`、`lastStatus`，取值同上面的日志，没读过时为 `null`）。这个接口不鉴权：内容只有各站点本来就公开的条目和 GitHub 仓库名。`catalog-sync` 工作流每次运行先读这个地址（`FINDS_URL`，命令行参数 `--finds-url`）：条目按各自的站点写进 `discovery.db` 的 `listings`（已有的不动），仓库以「从没试过」进入扫描队列（`discovered_by = 'search'`），之后和榜单发现的仓库一样被扫描、发布进 `catalog.db`。重复读入不会产生重复行。读不到这个地址只记在报告里（`report.json` 的 `discovery.searchFinds` 和 job summary），不影响这次同步，下次再读。
+- `GET /api/discovery/export` 导出 `found_listings` 和 `found_repos`（各最多 5000 条，最近的在前）；`repos` 每条带 API 最近一次读它的时间和结果（`lastAttemptAt`、`lastStatus`，取值同上面的日志，没读过时为 `null`），以及 `found_resources` 里从这个仓库读到的技能目录（`dirs`，没有时为空列表）。这个接口不鉴权：内容只有各站点本来就公开的条目和 GitHub 仓库名。`catalog-sync` 工作流每次运行先读这个地址（`FINDS_URL`，命令行参数 `--finds-url`）：条目按各自的站点写进 `discovery.db` 的 `listings`（已有的不动），仓库以「从没试过」进入扫描队列（`discovered_by = 'search'`），之后和榜单发现的仓库一样被扫描、发布进 `catalog.db`；导出的 `dirs` 进入 `discovery.db` 的 `repo_dirs` 队列（同一仓库的多行合并，路径不安全的丢弃），目录树被截断的仓库按这个队列读，见上文「扫描队列」。重复读入不会产生重复行。读不到这个地址只记在报告里（`report.json` 的 `discovery.searchFinds` 和 job summary），不影响这次同步，下次再读。
+
+**在测试环境验证过的**（证据在 #152 和 #229 里）：补搜从 SkillsMP 给出的目录读出截断仓库里的技能，详情可安装；`found_listings`、`found_repos`、`found_resources`、`search_lookups` 和技能详情在滚动重启后不变，重启后同一搜索词直接用存下的结论、不再请求站点；定时同步读入非空导出后，补搜新增的条目保留首次发现时间，不随 `catalog.db` 发布丢失。浏览器里从搜索、确认补搜、打开新发现的可安装详情（抽屉和整页，手机宽度是复制命令、更宽是桌面安装，命令为对应技能）到返回列表后搜索词和补搜结果仍在，中英文 × 390/820/1440px 都走通（[store-screenshots 45202065315](https://github.com/panghuli-studio/agent-store/actions/runs/45202065315)，用 `workflow_dispatch` 的 `flow_url` 重跑）。
 
 | 变量 | 用途 |
 |---|---|
@@ -266,59 +268,3 @@ make db-reset  # 删掉本地 app.db 重建
 推 `v*` tag 后，`release` 工作流构建 macOS（通用版 .dmg）、Windows（.exe / .msi）和 Linux（.deb / .rpm / .AppImage）安装包，发布到同名的 GitHub Release。版本号写在 `apps/cli-gui/src-tauri/tauri.conf.json` 和 `Cargo.toml`，打 tag 前先改。
 
 网页商店读最新 Release 的文件列表（`apps/store/lib/latest-release.ts`，缓存 5 分钟）；`/download/<目标>` 跳到对应的安装包，取不到时跳到发布页。
-
-### 搜索补充发现验收记录（2026-11-18，#152）
-
-- 测试环境 `GET /api/discovery/export` 返回 41 条发现、6 个仓库；
-  `nousresearch/hermes-agent` 的最近扫描时间是 2026-11-14T13:38:58.504Z，
-  状态为 `too large`。这证实早期外链结果触发了大仓库上限，不能据此推断为缺少令牌。
-  当前代码已支持大仓库按技能目录名扫描，以及失败仓库让出扫描名额（#218）。
-- [定时同步 44212628805](https://github.com/panghuli-studio/agent-store/actions/runs/44212628805)
-  成功读取非空导出：41 listings、6 repos、0 skipped；重复导入新增数均为 0。
-  测试 API 的 `/api/resources?q=cli-anything-obsidian&kind=skill` 已能返回
-  `github:hkuds/cli-anything/cli-anything-obsidian`，该记录也存在于 SkillsMP 发现导出中。
-  这证明发现仓库中的技能已进入发布目录；不证明该仓库只由搜索发现。
-- 本次再次请求 `obsidian daily notes skill` 返回 `found`、`partial: true`，
-  只有外链。公开响应不包含各站点失败原因；仍需部署侧日志确认这一次 SkillsMP
-  未产出结果的原因，不能把历史 `too large` 当作此次失败原因。
-- 回归测试位于 `apps/api/src/__tests__/search-supplement.test.ts`：关闭并重开
-  app.db、替换不含新技能的 catalog、发布含相同 id 的 catalog 后交接，及非空导出
-  经同步扫描进入 catalog。补搜扫描若有 SKILL.md 下载失败，保留旧的已验证资源，
-  只更新本次成功读取的资源；完整扫描才删除仓库中已消失的技能。
-- 线上进程重启验收尚未执行：重启属于部署操作，需部署侧授权及访问；
-  上述进程重建和 catalog 交接测试不能替代真实持久卷重启验收。
-- UI 当前仅有深色主题（#159）；验收矩阵为中文/英文 × 390/820/1440px。
-  `store-screenshots` 工作流包含补搜 offer/searching/found/none/unavailable 状态；
-  这些是明确标记的预览数据，不能替代真实 API 流程验收。
-
-本轮修复的 [unit 检查](https://github.com/panghuli-studio/agent-store/actions/runs/44267974124)
-已通过 API lint、类型检查和测试；新增的单个/全部下载失败、重开 app.db 和
-catalog 替换回归均通过。再次请求 `obsidian cli skill` 也只返回外链，
-而 `/api/resources` 已有上述 Obsidian 技能；需要部署侧确认运行版本及对应日志，
-不能仅凭主分支实现认定线上已具备 #219 的行为。
-
-[界面截图验收 44267969312](https://github.com/panghuli-studio/agent-store/actions/runs/44267969312)
-在 Actions 中实际启动商店和带发布目录的 API，工作流已成功。
-已逐张查看 offer/searching/found/none/unavailable 的中文、英文 ×
-390/820/1440px 截图，对照 `apps/store/DESIGN.md`：说明卡片换行、移动端按钮、
-可安装行与外链行、部分结果提示均符合现有设计，未发现横向溢出或视觉偏差。
-预览模式的 unavailable 隐藏重试按钮；正常模式有重试，组件测试覆盖该交互。
-这轮没有修改界面；真实新发现从浏览器确认到可安装详情的链路仍未完成验收。
-
-部署侧验收（2026-11-18，运行镜像构建自 #225 的提交，含 #218、#219，不含 #229；
-未配置 `GITHUB_TOKEN` 和 `SKILLSMP_API_KEY`）：
-
-- 08:31:50Z 的 `obsidian daily notes skill`：SkillsMP 超时（每站 4 秒），
-  不是限额或缺少令牌；没有 SkillsMP 结果就没有仓库可读，所以只有外链、`partial: true`。
-- 08:49:19Z 的 `obsidian kanban board`：SkillsMP 返回 10 条，读到的两个仓库都没出技能：
-  `openclaw/openclaw` 目录树被截断（`error`），`nexu-io/open-design` 有 170 个技能目录、
-  点名的技能名对不上目录名（`too large`）。两者的 `githubUrl` 都给出了技能目录，
-  但当时只取了仓库名。本 PR 起按这个目录读（见上文“哪些结果能安装”），
-  回归测试覆盖截断仓库按目录读出、目录没有 `SKILL.md` 时为 `error`、
-  名称与目录名不一致时按目录读出。
-- 发现导出从 41 条/6 仓库变为 46 条/6 仓库。滚动重启两次后导出除 `generatedAt`
-  外完全一致，5 条新发现的 `firstSeenAt` 和两个仓库的状态、尝试时间都在；
-  同一查询直接用存下的结果回答，没有再请求站点。重启期间 60 次列表请求均为 200。
-- 仍未验证：新读出的可安装资源（`found_resources`）跨重启——这次没有仓库读出技能；
-  这 5 条发现经下一次定时发布后仍在；浏览器从新发现到可安装详情的流程；
-  本 PR 和 #229 的修复在线上的效果（需部署后再查同一查询）。

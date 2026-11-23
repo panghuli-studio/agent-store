@@ -34,7 +34,7 @@ const SKILL_KEY = /^(github:[\w.-]+\/[\w.-]+|clawhub:[^\s/:]+|skillhub:[^\s/:]+)
 const LISTING_ID = /^[^\s\u0000-\u001f]{1,300}$/
 
 /** A repo-relative directory: plain segments, no `.`/`..`, no control characters. */
-const GITHUB_DIR = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[^/\u0000-\u001f\\:]{1,100}(?:\/[^/\u0000-\u001f\\:]{1,100}){0,9}$/
+export const GITHUB_DIR = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[^/\u0000-\u001f\\:]{1,100}(?:\/[^/\u0000-\u001f\\:]{1,100}){0,9}$/
 
 const clean = (v: string | null, max: number): string | null => {
   const s = v?.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()

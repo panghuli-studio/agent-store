@@ -35,8 +35,12 @@ export interface FoundExport {
     githubRepo: string | null
     firstSeenAt: string
   }>
-  /** lastAttemptAt and lastStatus: the API's latest scan of the repo; null when it never scanned it. */
-  repos: Array<{ fullName: string; source: string; firstSeenAt: string; lastAttemptAt: string | null; lastStatus: string | null }>
+  /**
+   * lastAttemptAt and lastStatus: the API's latest scan of the repo; null when it never scanned it.
+   * dirs: the skill directories of the skills the API read from it and serves, so the sync can
+   * read them even when GitHub truncates the repo's git tree.
+   */
+  repos: Array<{ fullName: string; source: string; firstSeenAt: string; lastAttemptAt: string | null; lastStatus: string | null; dirs: string[] }>
 }
 
 export interface StoredLookup {
@@ -214,7 +218,15 @@ export class FoundStore {
       lastAttemptAt: foundRepos.lastAttemptAt, lastStatus: foundRepos.lastStatus,
     })
       .from(foundRepos).orderBy(desc(foundRepos.firstSeenAt), asc(foundRepos.fullName)).limit(limit).all()
-    return { generatedAt: now, listings, repos }
+    const dirs = new Map<string, string[]>()
+    const served = this.db.select({ githubRepo: foundResources.githubRepo, dir: sql<string | null>`json_extract(${foundResources.detail}, '$.repo.dir')` })
+      .from(foundResources).orderBy(asc(foundResources.id)).all()
+    for (const r of served) {
+      if (!r.dir) continue
+      const key = r.githubRepo.toLowerCase()
+      dirs.set(key, [...(dirs.get(key) ?? []), r.dir])
+    }
+    return { generatedAt: now, listings, repos: repos.map((r) => ({ ...r, dirs: dirs.get(r.fullName.toLowerCase()) ?? [] })) }
   }
 
   prune(now: Date): void {
