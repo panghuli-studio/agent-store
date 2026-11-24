@@ -48,7 +48,7 @@ failed=0
 check() { if eval "$2"; then log "ok: $1"; else log "FAIL: $1"; failed=1; fi; }
 links_to() { [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; }
 # Prints the library slug of hosted skill $1 when its copy matches the listing (hosted-check.py).
-hosted_slug() { python3 -I /work/test/desktop-linux/hosted-check.py "${AS_STORE_URL:-https://agent-store-test.panghuli.tech}" "$1" "$LIB" "$HOME" 2>>"$OUT/result.txt"; }
+hosted_slug() { python3 -I /work/test/desktop-linux/hosted-check.py "${AS_STORE_URL:-https://agent-store.tail1eafd1.ts.net}" "$1" "$LIB" "$HOME" 2>>"$OUT/result.txt"; }
 
 export DISPLAY=:99
 # No GPU in the container: without these WebKitGTK paints a black window.
@@ -885,7 +885,7 @@ cli doctor
 #     store's origins and the loopback host, and gone with the app. find-skills is installed
 #     by step 2; the other id is not.
 LOCAL_API=127.0.0.1:18781
-STORE_ORIGIN=https://agent-store-test.panghuli.tech
+STORE_ORIGIN=https://agent-store.tail1eafd1.ts.net
 MISSING_ID=github:nobody/nothing/none
 # Prints the status line, the CORS header (or "-") and the body, one per line.
 ask_local() {

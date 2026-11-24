@@ -23,6 +23,8 @@ jobs:
     uses: ./.github/workflows/desktop-smoke.yml
     with:
       ref: ${{ inputs.tag || github.ref }}
+    # desktop-smoke joins the tailnet with TS_OAUTH_* to reach the test catalog.
+    secrets: inherit
 
   release:
     needs: smoke

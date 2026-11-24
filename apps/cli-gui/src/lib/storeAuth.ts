@@ -3,7 +3,7 @@
 /** Base URL of the web store, for links to its pages. Override for local dev with VITE_STORE_URL. */
 export function getStoreBaseUrl(): string {
   const env = (import.meta as { env?: Record<string, string | undefined> }).env
-  return env?.['VITE_STORE_URL'] || 'https://agent-store-test.panghuli.tech'
+  return env?.['VITE_STORE_URL'] || 'https://agent-store.tail1eafd1.ts.net'
 }
 
 function claims(token: string): Record<string, unknown> | null {

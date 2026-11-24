@@ -42,8 +42,8 @@ test('the store gets the asked ids that are installed, and nothing else', async 
 })
 
 test('the test store is allowed too', async () => {
-  const res = await ask(SKILL, { origin: 'https://agent-store-test.panghuli.tech' })
-  expect(res.headers.get('access-control-allow-origin')).toBe('https://agent-store-test.panghuli.tech')
+  const res = await ask(SKILL, { origin: 'https://agent-store.tail1eafd1.ts.net' })
+  expect(res.headers.get('access-control-allow-origin')).toBe('https://agent-store.tail1eafd1.ts.net')
 })
 
 test('providers are never reported installed', async () => {

@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 25
     env:
       # Baked into the image as its public URL only; nothing the shots load calls it.
-      TEST_URL: https://agent-store-test.panghuli.tech
+      TEST_URL: https://agent-store.tail1eafd1.ts.net
       # Only signs the demo sessions of this throwaway container.
       BETTER_AUTH_SECRET: ci-screenshots-secret-0123456789abcdef
     steps:

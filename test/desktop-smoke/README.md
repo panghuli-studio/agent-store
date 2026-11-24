@@ -16,7 +16,7 @@ It runs on pull requests that change `apps/cli-gui`, `apps/cli`, `apps/client-co
 | CLIs outside launchd's `PATH` (#203) | Claude Code and Codex from npm under `~/.npm-global`, put on `PATH` only by the login shell's profile; the app is opened by Finder; its and the sidecar's `PATH` (`gui-env.txt`), Settings › Agents, and an MCP link install that must go through `claude mcp add-json` and `codex mcp add` (each CLI is wrapped to log its calls in `cli-calls.log`; `codex-config.diff` shows what Codex's rewrite did to comments) | not checked |
 | Crashes | no new report in `DiagnosticReports` for the app or `aas` | no Application Error / Hang event (1000-1002) for `app.exe` or `aas.exe` |
 
-The installs use the live test catalog at https://agent-store-test.panghuli.tech. An outage longer than the retries fails the run.
+The installs use the live test catalog at https://agent-store.tail1eafd1.ts.net. An outage longer than the retries fails the run.
 
 ## How the runners differ from a user's machine
 

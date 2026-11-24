@@ -38,7 +38,7 @@ concurrency:
 
 env:
   RELEASE_TAG: catalog
-  FINDS_URL: https://agent-store-test.panghuli.tech/api/discovery/export
+  FINDS_URL: https://agent-store.tail1eafd1.ts.net/api/discovery/export
 
 jobs:
   sync:
@@ -46,6 +46,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      # FINDS_URL is on the tailnet only (home-lab svc:agent-store).
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:agent-store-ci
       - uses: oven-sh/setup-bun@v2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4

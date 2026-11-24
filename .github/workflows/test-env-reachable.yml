@@ -21,8 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      TEST_URL: https://agent-store-test.panghuli.tech
+      TEST_URL: https://agent-store.tail1eafd1.ts.net
     steps:
+      # The test environment is only reachable on the tailnet (home-lab svc:agent-store).
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:agent-store-ci
       - name: Catalog API, web store and sign-in answer
         run: |
           failed=0
@@ -38,7 +44,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # The test environment is only reachable on the tailnet (home-lab svc:agent-store).
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:agent-store-ci
       - name: First byte and total time within budget
         env:
           ENFORCE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-        run: scripts/latency-budget.sh https://agent-store-test.panghuli.tech
+        run: scripts/latency-budget.sh https://agent-store.tail1eafd1.ts.net

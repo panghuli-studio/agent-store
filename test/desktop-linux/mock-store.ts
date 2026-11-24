@@ -10,7 +10,7 @@
 // this server's fetch, not every client: a request forwarded from Python's urllib got a 403.
 import { writeFileSync } from 'node:fs'
 
-const UPSTREAM = process.env['MOCK_UPSTREAM'] ?? 'https://agent-store-test.panghuli.tech'
+const UPSTREAM = process.env['MOCK_UPSTREAM'] ?? 'https://agent-store.tail1eafd1.ts.net'
 const PORT = Number(process.env['MOCK_PORT'] ?? 18790)
 const STATE_FILE = process.env['MOCK_STATE'] ?? '/tmp/mock-store.json'
 // Polls before a code counts as approved, so the waiting dialog can be screenshotted.

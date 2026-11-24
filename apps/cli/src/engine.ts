@@ -2,9 +2,9 @@ import { EngineImpl } from '@as/client-core'
 import { ensureRelayRunning, stopRelay } from './commands/relay'
 import { realRelayOps } from './relay-ops'
 
-// The default must be the public store: the desktop client spawns this CLI as its
-// sidecar without AS_STORE_URL. Local dev and tests set AS_STORE_URL themselves.
-const DEFAULT_STORE_URL = 'https://agent-store-test.panghuli.tech'
+// The default must be the deployed store (tailnet only for now): the desktop client spawns
+// this CLI as its sidecar without AS_STORE_URL. Local dev and tests set AS_STORE_URL themselves.
+const DEFAULT_STORE_URL = 'https://agent-store.tail1eafd1.ts.net'
 
 // Client id of the OAuth app (device flow enabled) that backups sign in to GitHub with. It is not a
 // secret; the device flow uses no client secret. Empty until the owner registers the app (#231):

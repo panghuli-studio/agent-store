@@ -2,7 +2,7 @@
 
 Claude Code 和 Codex 的应用商店加本地管理客户端：在网页上找技能（skill）、MCP 服务和模型供应商（provider），一键装进本机的 Claude Code 和 Codex，在桌面客户端里管理已装的东西、切换供应商、查看用量。
 
-- 网页商店（测试环境）：<https://agent-store-test.panghuli.tech>
+- 网页商店（测试环境）：<https://agent-store.tail1eafd1.ts.net>
 - 桌面客户端下载：[GitHub Releases](https://github.com/phenix3443/agent-store/releases/latest)，macOS（通用版）、Windows、Linux（.deb / .rpm / .AppImage）
 
 ## 能装什么

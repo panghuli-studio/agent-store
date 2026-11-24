@@ -93,6 +93,51 @@ jobs:
           projectPath: apps/cli-gui
           args: ${{ matrix.tauri-args }}
 
+      # The live catalog the installs use is only reachable on the tailnet (home-lab svc:agent-store).
+      - uses: tailscale/github-action@v4
+        timeout-minutes: 10
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:agent-store-ci
+
+      # On macOS the action points the whole system DNS at 100.100.100.100
+      # (tailscale/github-action#315). This tailnet is IPv6-only (home-lab policy:
+      # disable-ipv4), so that address has no route: every lookup fails, the runner loses the
+      # Actions service, steps stop reporting and the job sits until its timeout. Give DNS back
+      # to the runner and pin the service's tailnet IPv6 address in /etc/hosts: with no global
+      # IPv6 on the runner, macOS hands apps only the A record, the IPv4 VIP, which has no
+      # route here either.
+      - name: Pin the catalog's tailnet address (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          sudo networksetup -setdnsservers Ethernet Empty
+          sudo networksetup -setsearchdomains Ethernet Empty
+          host=agent-store.tail1eafd1.ts.net
+          v6=$(dig +short +time=5 +tries=3 AAAA "$host" @fd7a:115c:a1e0::53 | grep '^fd7a:' | head -1)
+          [ -n "$v6" ] || { echo "MagicDNS gave no tailnet AAAA for $host" >&2; exit 1; }
+          echo "$v6 $host" | sudo tee -a /etc/hosts
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+          dscacheutil -q host -a name github.com | grep -q ip_address
+
+      - name: Catalog answers over the tailnet (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          url='https://agent-store.tail1eafd1.ts.net/api/resources?limit=1'
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url") || true
+          echo "$status $url"
+          if [ "$status" != 200 ]; then
+            tailscale status || true
+            curl -v --max-time 15 -o /dev/null "$url" 2>&1 | grep '^\*' || true
+            sudo tail -30 "$HOME/tailscaled.log" || true
+            exit 1
+          fi
+
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 15

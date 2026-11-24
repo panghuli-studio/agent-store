@@ -6,7 +6,7 @@ import { localApiOrigins, runLocalApi } from '../local-api'
 test('the store origins are always allowed; a build adds its own store origin', () => {
   expect(localApiOrigins([])).toEqual([...STORE_ORIGINS])
   expect(localApiOrigins(['http://localhost:3000'])).toEqual([...STORE_ORIGINS, 'http://localhost:3000'])
-  expect(localApiOrigins(['https://agent-store-test.panghuli.tech'])).toEqual([...STORE_ORIGINS])
+  expect(localApiOrigins(['https://agent-store.tail1eafd1.ts.net'])).toEqual([...STORE_ORIGINS])
 })
 
 test('anything but a bare http(s) origin is ignored', () => {
