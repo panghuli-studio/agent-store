@@ -7,10 +7,9 @@ import { realRelayOps } from './relay-ops'
 const DEFAULT_STORE_URL = 'https://agent-store.tail1eafd1.ts.net'
 
 // Client id of the OAuth app (device flow enabled) that backups sign in to GitHub with. It is not a
-// secret; the device flow uses no client secret. Empty until the owner registers the app (#231):
-// until then `aas backup connect --github` and the client's GitHub option say it is not set up.
+// secret; the device flow uses no client secret. Uses the existing agent-store OAuth app (#231).
 // AS_GITHUB_CLIENT_ID overrides it, AS_GITHUB_URL and AS_GITHUB_API_URL point at another GitHub.
-const DEFAULT_GITHUB_CLIENT_ID = ''
+const DEFAULT_GITHUB_CLIENT_ID = 'Ov23libYqp7LUPlxHdMN'
 
 export function createEngine(): EngineImpl {
   const storeUrl = process.env['AS_STORE_URL'] ?? DEFAULT_STORE_URL
