@@ -104,28 +104,24 @@ jobs:
       # On macOS the action points the whole system DNS at 100.100.100.100
       # (tailscale/github-action#315). This tailnet is IPv6-only (home-lab policy:
       # disable-ipv4), so that address has no route: every lookup fails, the runner loses the
-      # Actions service, steps stop reporting and the job sits until its timeout. Give public
-      # names back to the runner's resolver and send only ts.net to MagicDNS on its IPv6
-      # address. Public DNS also answers for the service name, but with the IPv4 VIP, which
-      # has no route here either.
-      - name: Scope tailnet DNS to ts.net (macOS)
+      # Actions service, steps stop reporting and the job sits until its timeout. Give DNS back
+      # to the runner and pin the service's tailnet IPv6 address in /etc/hosts: with no global
+      # IPv6 on the runner, macOS hands apps only the A record, the IPv4 VIP, which has no
+      # route here either.
+      - name: Pin the catalog's tailnet address (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 2
         shell: bash
         run: |
           sudo networksetup -setdnsservers Ethernet Empty
           sudo networksetup -setsearchdomains Ethernet Empty
-          sudo mkdir -p /etc/resolver
-          echo 'nameserver fd7a:115c:a1e0::53' | sudo tee /etc/resolver/ts.net >/dev/null
+          host=agent-store.tail1eafd1.ts.net
+          v6=$(dig +short +time=5 +tries=3 AAAA "$host" @fd7a:115c:a1e0::53 | grep '^fd7a:' | head -1)
+          [ -n "$v6" ] || { echo "MagicDNS gave no tailnet AAAA for $host" >&2; exit 1; }
+          echo "$v6 $host" | sudo tee -a /etc/hosts
           sudo dscacheutil -flushcache
           sudo killall -HUP mDNSResponder
-          resolves() { dscacheutil -q host -a name "$1" | grep -q "$2"; }
-          for check in 'github.com ip_address' 'agent-store.tail1eafd1.ts.net ipv6_address: fd7a:'; do
-            read -r name want <<<"$check"
-            for _ in 1 2 3 4 5 6 7 8 9 10; do resolves "$name" "$want" && break; sleep 2; done
-            dscacheutil -q host -a name "$name"
-            resolves "$name" "$want" || { echo "$name: no '$want' answer" >&2; exit 1; }
-          done
+          dscacheutil -q host -a name github.com | grep -q ip_address
 
       - name: Catalog answers over the tailnet (macOS)
         if: runner.os == 'macOS'
