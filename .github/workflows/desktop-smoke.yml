@@ -95,10 +95,35 @@ jobs:
 
       # The live catalog the installs use is only reachable on the tailnet (home-lab svc:agent-store).
       - uses: tailscale/github-action@v4
+        timeout-minutes: 10
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:agent-store-ci
+
+      # On macOS the action points the whole system DNS at 100.100.100.100
+      # (tailscale/github-action#315). When that resolver drops a public lookup, the runner
+      # cannot reach the Actions service: steps stop reporting, their timeouts never fire, and
+      # the job sits until the job timeout. Keep public lookups on the runner's own resolver and
+      # send only *.ts.net to the tailnet one.
+      - name: Scope tailnet DNS to ts.net (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          sudo networksetup -setdnsservers Ethernet Empty
+          sudo networksetup -setsearchdomains Ethernet Empty
+          sudo mkdir -p /etc/resolver
+          echo 'nameserver 100.100.100.100' | sudo tee /etc/resolver/ts.net >/dev/null
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+          for name in github.com agent-store.tail1eafd1.ts.net; do
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              dscacheutil -q host -a name "$name" | grep -q address && break
+              sleep 2
+            done
+            dscacheutil -q host -a name "$name" | grep address || { echo "$name does not resolve" >&2; exit 1; }
+          done
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
