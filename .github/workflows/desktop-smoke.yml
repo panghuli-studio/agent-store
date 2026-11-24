@@ -125,6 +125,26 @@ jobs:
             dscacheutil -q host -a name "$name" | grep address || { echo "$name does not resolve" >&2; exit 1; }
           done
 
+      - name: Catalog answers over the tailnet (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          url='https://agent-store.tail1eafd1.ts.net/api/resources?limit=1'
+          failed=0
+          for ip in -4 -6; do
+            status=$(curl "$ip" -s -o /dev/null -w '%{http_code} %{time_total}s' --max-time 20 "$url") || true
+            echo "curl $ip: $status"
+            [ "${status%% *}" = 200 ] || failed=1
+          done
+          if [ "$failed" = 1 ]; then
+            tailscale status || true
+            tailscale ping -c 3 agent-store.tail1eafd1.ts.net || true
+            route -n get "$(dscacheutil -q host -a name agent-store.tail1eafd1.ts.net | awk '/^ip_address/ {print $2; exit}')" || true
+            sudo tail -50 "$HOME/tailscaled.log" || true
+            exit 1
+          fi
+
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 15
