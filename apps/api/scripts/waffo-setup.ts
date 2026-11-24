@@ -11,7 +11,7 @@ import { PRICING } from '@as/types'
 import { getWaffoClient } from '../src/waffo'
 
 const storeName = process.env['WAFFO_STORE_NAME'] ?? 'AgentStore'
-const webhookUrl = process.env['WAFFO_WEBHOOK_URL'] ?? 'https://agent-store-test.panghuli.tech/api/webhooks/waffo'
+const webhookUrl = process.env['WAFFO_WEBHOOK_URL'] ?? 'https://agent-store-test-webhook.panghuli.tech/api/webhooks/waffo'
 const testMode = process.env['WAFFO_TEST'] !== 'false'
 const dryRun = process.argv.includes('--dry-run')
 const events = [

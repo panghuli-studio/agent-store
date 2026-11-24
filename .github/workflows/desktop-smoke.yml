@@ -93,6 +93,13 @@ jobs:
           projectPath: apps/cli-gui
           args: ${{ matrix.tauri-args }}
 
+      # The live catalog the installs use is only reachable on the tailnet (home-lab svc:agent-store).
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:agent-store-ci
+
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 15

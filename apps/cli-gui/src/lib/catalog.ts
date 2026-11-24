@@ -1,6 +1,6 @@
 import type { CatalogResource, CatalogResourceDetail, InstalledItem, Item } from '@as/types'
 
-export const STORE_BASE = 'https://agent-store-test.panghuli.tech'
+export const STORE_BASE = 'https://agent-store.tail1eafd1.ts.net'
 
 /** `/store/<kind>/<id>` on the web store; each '/'-separated part of the id is one path segment. */
 export function storePageUrl(kind: string, id: string): string {

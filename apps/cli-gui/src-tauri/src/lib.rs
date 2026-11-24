@@ -8,7 +8,7 @@ use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 // The web store's origin for this build, like getStoreBaseUrl() in src/lib/storeAuth.ts.
-const DEFAULT_STORE_URL: &str = "https://agent-store-test.panghuli.tech";
+const DEFAULT_STORE_URL: &str = "https://agent-store.tail1eafd1.ts.net";
 
 // Holds the `aas __local-api` child: dropping it would close the child's stdin, which is
 // how the child knows to exit, so it lives as long as the app.

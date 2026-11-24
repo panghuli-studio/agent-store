@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Times key pages and API endpoints of a deployed environment against a budget (#216).
 #
-#   scripts/latency-budget.sh https://agent-store-test.panghuli.tech
+#   scripts/latency-budget.sh https://agent-store.tail1eafd1.ts.net
 #
 # Each path is fetched RUNS times (default 3) like a browser would (compressed). The
 # median time to first byte and the median total are compared with the budget; with

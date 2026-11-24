@@ -1,11 +1,13 @@
 # 部署
 
-只有一个测试环境，跑在 home-lab 的 k3s 集群上（节点 `vm-149`，美国），公网地址 `https://agent-store-test.panghuli.tech`，经 Cloudflare Tunnel 进集群。商店和 API 共用这个域名，ingress 按路径分流：`/api/auth/*` 给商店，其余 `/api/*` 给 API，其他路径给商店。
+只有一个测试环境，跑在 home-lab 的 k3s 集群上（节点 `vm-149`，美国），只在 tailnet 内可达：`https://agent-store.tail1eafd1.ts.net`（home-lab 的 Tailscale Service `svc:agent-store`）。商店和 API 共用这个域名，ingress 按路径分流：`/api/auth/*` 给商店，其余 `/api/*` 给 API，其他路径给商店。公网上只有 Waffo 的支付回调 `https://agent-store-test-webhook.panghuli.tech/api/webhooks/waffo`，经 Cloudflare Tunnel 进集群。原来的公网域名 `agent-store-test.panghuli.tech` 和 `test.agent-store.panghuli.tech` 已于 2026-11-25 删除。
+
+GitHub Actions 里要访问测试环境的工作流（`test-env-reachable`、`catalog-sync`、`desktop-smoke`）先用 `tailscale/github-action` 以 `tag:agent-store-ci` 加入 tailnet，凭据是仓库的 Actions secrets `TS_OAUTH_CLIENT_ID`、`TS_OAUTH_SECRET`（Tailscale OAuth 客户端，`auth_keys` 写权限，只带这个标签）。标签的授权在 home-lab 的 `tailscale/policy.hujson`。
 
 | 组件 | 地址 | 镜像 |
 |---|---|---|
-| 网页商店（含登录） | `https://agent-store-test.panghuli.tech` | `ghcr.io/phenix3443/agent-store-store` |
-| API | `https://agent-store-test.panghuli.tech/api/*` | `ghcr.io/phenix3443/agent-store-api` |
+| 网页商店（含登录） | `https://agent-store.tail1eafd1.ts.net` | `ghcr.io/phenix3443/agent-store-store` |
+| API | `https://agent-store.tail1eafd1.ts.net/api/*` | `ghcr.io/phenix3443/agent-store-api` |
 
 部署清单、密钥和入口配置在 home-lab 仓库的 `projects/agent-store/test/`，那里的 README 写了怎么排查。
 
@@ -209,7 +211,7 @@ Better Auth 跑在商店里（`apps/store/lib/auth/server.ts`），用 Node 内�
 - 本机开发时 API 和商店不在同一个端口：sidecar 用 `AS_STORE_URL` 访问 API，用 `AS_AUTH_URL` 访问商店的 `/api/auth/*`（`make dev-client` 已设置）；部署后两者同域，不设 `AS_AUTH_URL`。
 - API 用商店的 `/api/auth/jwks` 验签（`AUTH_JWKS_URL`，集群内直连 `http://store:3000`），并校验签发方 `AUTH_ISSUER`。
 - 令牌里的 `username` 是 GitHub 登录名，发布者按它对应。它由 `apps/store/lib/auth/github-username.ts` 在每次 GitHub 登录时用访问令牌向 GitHub 查询后写入用户表；只用 Google 登录的用户没有 `username`，用 GitHub 登录一次后补上。
-- GitHub OAuth App 的回调地址是 `https://agent-store-test.panghuli.tech/api/auth/callback/github`；Google OAuth 客户端的重定向 URI 是 `https://agent-store-test.panghuli.tech/api/auth/callback/google`。Google 只在配置了 `GOOGLE_CLIENT_ID` 时启用。
+- GitHub OAuth App 的回调地址是 `https://agent-store.tail1eafd1.ts.net/api/auth/callback/github`；Google OAuth 客户端的重定向 URI 是 `https://agent-store.tail1eafd1.ts.net/api/auth/callback/google`。Google 只在配置了 `GOOGLE_CLIENT_ID` 时启用。
 - `/auth/login`、`/auth/logout` 在进程内调用 Better Auth，不经 HTTP 请求自己：Pod 里的 `request.url` 是容器的明文地址，拿它拼出来的地址访问不通。
 - 改了登录配置（加插件、加用户字段）后，用 Better Auth 的 `getMigrations` 对比一次表结构（SQLite 下日期列是 `date`、布尔列是 `integer`），再改 `apps/api/src/db/schema.ts`，在 `apps/api` 下跑 `pnpm db:generate` 生成迁移。
 
@@ -240,7 +242,7 @@ API 已接入：`POST /api/billing/checkout` 建订单，`POST /api/webhooks/waf
 | `WAFFO_PRODUCT_ID_PRO_MONTHLY` / `WAFFO_PRODUCT_ID_PRO_YEARLY` / `WAFFO_PRODUCT_ID_LIFETIME` | 产品 ID |
 | `WAFFO_CHECKOUT_SUCCESS_URL` | 付款后跳转。只认这个配置，请求体里的地址会被忽略 |
 
-Waffo 的 webhook 地址是 `https://agent-store-test.panghuli.tech/api/webhooks/waffo`，`apps/api/scripts/waffo-setup.ts` 默认就配这个地址。脚本按名称找 `AgentStore` 店铺（同一商户下还有其他项目的店铺），已有的订阅商品直接沿用，已有的 webhook 只改地址，可以重复执行。先加 `--dry-run` 看它会改什么：
+Waffo 的 webhook 地址是 `https://agent-store-test-webhook.panghuli.tech/api/webhooks/waffo`，`apps/api/scripts/waffo-setup.ts` 默认就配这个地址。脚本按名称找 `AgentStore` 店铺（同一商户下还有其他项目的店铺），已有的订阅商品直接沿用，已有的 webhook 只改地址，可以重复执行。先加 `--dry-run` 看它会改什么：
 
 ```sh
 pnpm --filter @as/types build

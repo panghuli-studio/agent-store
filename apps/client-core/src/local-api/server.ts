@@ -3,7 +3,7 @@ import type { InstalledItem } from '@as/types'
 export const LOCAL_API_PORT = 18781
 
 /** The web store's origins. A build pointed at another store adds that one (`aas __local-api <origin>`). */
-export const STORE_ORIGINS = ['https://agent-store.panghuli.tech', 'https://agent-store-test.panghuli.tech']
+export const STORE_ORIGINS = ['https://agent-store.panghuli.tech', 'https://agent-store.tail1eafd1.ts.net']
 
 export const MAX_IDS = 100
 

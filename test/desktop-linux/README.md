@@ -1,6 +1,6 @@
 # Desktop client on Linux: install links
 
-Builds the Linux client in Docker and opens `agent-store://install` links on a virtual display, the way a desktop hands a browser's link to the app. It uses the live catalog at https://agent-store-test.panghuli.tech and installs into the container's own home.
+Builds the Linux client in Docker and opens `agent-store://install` links on a virtual display, the way a desktop hands a browser's link to the app. It uses the live catalog at https://agent-store.tail1eafd1.ts.net and installs into the container's own home.
 
 ```sh
 docker build -f test/desktop-linux/Dockerfile -t as-desktop-linux .
